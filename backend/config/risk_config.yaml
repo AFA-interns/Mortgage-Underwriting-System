@@ -1,0 +1,38 @@
+risk:
+  weights:
+    credit: 0.25
+    foir: 0.20
+    ltv: 0.15
+    property: 0.15
+    documents: 0.15
+    stability: 0.10
+  bands:
+    low: 80
+    moderate: 60
+    high: 40
+
+decision:
+  approve_min_score: 80
+  deny_max_score: 40
+  minimum_confidence: 0.85
+
+contradiction:
+  income_tolerance_percent: 10
+  value_tolerance_percent: 5
+
+confidence:
+  base: 0.50
+  completeness_weight: 0.25
+  evidence_weight: 0.20
+  contradiction_penalty_per_high: 0.10
+  upstream_confidence_weight: 0.15
+
+llm:
+  primary:
+    provider: google
+    model: gemini-2.0-flash
+  fallback:
+    provider: groq
+    model: llama-3.1-70b-versatile
+  temperature: 0.2
+  max_tokens: 4096
