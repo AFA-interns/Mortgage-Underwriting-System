@@ -1,0 +1,63 @@
+cibil:
+  bands:
+    excellent: 750
+    good: 700
+    fair: 650
+    poor: 550
+  # Maps our CIBIL band to the low/moderate/high vocabulary
+  # app.decision.risk_engine._score_credit_history already expects.
+  risk_tier_map:
+    excellent: low
+    good: low
+    fair: moderate
+    poor: high
+    very_poor: high
+    new_to_credit: moderate
+
+foir:
+  # Salaried <=50-55%, self-employed/business <=40-50% (stricter - less
+  # stable/verifiable income). Using the upper bound for salaried and the
+  # midpoint for self-employed/business as the hard threshold.
+  thresholds:
+    salaried: 0.55
+    self_employed: 0.45
+    business: 0.45
+  # Outstanding credit-card balance with no declared EMI still counts as an
+  # EMI-equivalent obligation, per common Indian bank practice (min-due %).
+  credit_card_emi_equivalent_rate: 0.05
+  # Placeholder rate for estimating the proposed EMI when no sanctioned rate
+  # is available yet - replace once loan pricing reaches this agent.
+  assumed_annual_interest_rate_percent: 8.5
+
+red_flags:
+  loan_stacking_enquiry_threshold: 3
+  # Rough ballpark: lenders commonly cap loan amount at ~5-6x annual income
+  # for salaried, tighter for self-employed. Raises a flag, does not reject.
+  income_to_loan_multiple:
+    salaried: 6
+    self_employed: 5
+    business: 5
+
+decision:
+  cibil_hard_reject_threshold: 550
+  # Absolute percentage-point overshoot past the FOIR threshold that forces
+  # an automatic reject (e.g. 55% threshold rejects outright past 70%).
+  foir_reject_overshoot: 0.15
+  # A cibil_score below the hard-reject threshold can still be "conditional"
+  # if FOIR is comfortably under threshold by this much AND zero red flags.
+  compensating_foir_headroom: 0.10
+
+risk_score:
+  weights:
+    credit_band: 0.45
+    foir: 0.35
+    red_flags: 0.20
+  red_flag_penalty:
+    severe: 30.0
+    mild: 12.0
+
+confidence:
+  base: 0.90
+  no_credit_history_penalty: 0.30
+  per_red_flag_penalty: 0.05
+  floor: 0.30

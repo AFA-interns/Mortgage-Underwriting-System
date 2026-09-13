@@ -35,6 +35,14 @@ class ResolutionStatus(StrEnum):
     PENDING_REVIEW = "PENDING_REVIEW"
 
 
+class CreditDecisionType(StrEnum):
+    """The Credit Analysis Agent's own preliminary decision — NOT the final
+    loan decision (that remains DecisionType, owned by the Decision Agent)."""
+    APPROVE = "APPROVE"
+    CONDITIONAL = "CONDITIONAL"
+    REJECT = "REJECT"
+
+
 class CrewRole(StrEnum):
     UNDERWRITER = "underwriter"
     RISK_ANALYST = "risk_analyst"
@@ -72,11 +80,25 @@ class DocumentAnalysisResult(BaseModel):
 class CreditAnalysisResult(BaseModel):
     cibil_score: int | None = Field(None, ge=0, le=900)
     credit_risk_tier: str = "unknown"
+    # Finer-grained CIBIL band than credit_risk_tier's low/moderate/high -
+    # one of Excellent/Good/Fair/Poor/Very Poor/New-to-Credit. Additive field,
+    # not read by the existing risk engine/crew - see README_credit.md.
+    credit_band: str = "unknown"
     foir: float | None = Field(None, ge=0, le=1)
     monthly_obligations: float = 0.0
     ltv: float | None = Field(None, ge=0, le=2)
     income_stability: str = "unknown"
     confidence: float = Field(0.0, ge=0, le=1)
+    # Credit Analysis Agent's own 0-100 composite (credit_band + FOIR headroom
+    # + red flags) - distinct from the Decision Agent's separate 6-component
+    # app.decision.risk_engine score, which consumes this agent's other
+    # fields (cibil_score, credit_risk_tier, foir, ltv, income_stability) as
+    # one of its own inputs rather than reusing this number directly.
+    risk_score: float = Field(0.0, ge=0, le=100)
+    # Rule-based preliminary credit decision - explained, never overridden,
+    # by this agent's LLM reasoning node. NOT the final loan decision.
+    preliminary_decision: CreditDecisionType | None = None
+    reasoning: str = ""
     flags: list[str] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
     raw_data: dict[str, Any] = Field(default_factory=dict)

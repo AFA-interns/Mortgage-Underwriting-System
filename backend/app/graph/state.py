@@ -15,6 +15,13 @@ class UnderwritingState(TypedDict, total=False):
     property_analysis: dict[str, Any]
     compliance_analysis: dict[str, Any]
 
+    # Optional pre-fetched/synthetic credit bureau report, keyed by
+    # application_id. When absent, app.graph.nodes.credit falls back to the
+    # stubbed app.services.credit_bureau.fetch_credit_report. Lets tests and
+    # a future real bureau integration bypass the stub without changing the
+    # node's signature.
+    credit_bureau_data: dict[str, Any]
+
     # Decision Agent internal results
     validation_result: dict[str, Any]
     contradictions: list[dict[str, Any]]
