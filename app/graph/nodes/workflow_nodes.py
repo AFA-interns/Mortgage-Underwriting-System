@@ -94,7 +94,7 @@ def explanation_node(state: AgentState) -> AgentState:
             len(state.get("candidate_comps", []))
         )}
         
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+    llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
     
     prompt = f"""
     You are a Property Valuation Assistant. Explain the valuation concisely.
