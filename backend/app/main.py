@@ -6,6 +6,8 @@ import shutil
 import tempfile
 from typing import Any, List, Optional, Dict
 
+from app.services.avnester import search_properties
+
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -106,6 +108,10 @@ async def get_decision(application_id: str) -> dict[str, Any]:
     latest = records[-1]
     return latest.get("final_decision", {})
 
+@app.post("/property/search")
+async def property_search(filters: dict[str, Any]):
+    """Test endpoint for AVnester API connection."""
+    return await search_properties(filters)
 
 @app.get("/underwriting/{application_id}/report")
 async def get_report(application_id: str) -> dict[str, Any]:
