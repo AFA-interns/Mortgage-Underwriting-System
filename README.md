@@ -3,6 +3,46 @@
 This repository contains an **Agentic AI Mortgage Underwriting System** specifically designed for Residential Property Valuation in India. It is a decision-support component built with **FastAPI** and **LangGraph**, relying on a hybrid valuation approach (Comparable Sales + Market APIs) rather than an LLM alone.
 
 ## Architecture Highlights
+
+```mermaid
+flowchart TD
+    Client([Client / Underwriting System])
+    
+    subgraph FastAPI [FastAPI Backend]
+        EvaluateAPI["POST /api/v1/valuation/evaluate"]
+        ResumeAPI["POST /api/v1/valuation/{thread_id}/resume"]
+    end
+    
+    subgraph LangGraph [LangGraph Agent Workflow]
+        Intake["1. Intake Node<br/>(Normalize Input)"]
+        Location["2. Location Node<br/>(Geocode via Nominatim)"]
+        Comps["3. Comps Node<br/>(Query Comparable DB)"]
+        MockAPI["4. External API Node<br/>(Fetch Market Benchmark)"]
+        Reconcile["5. Reconcile Node<br/>(Compare Data & Score Risk)"]
+        Decision{"Confidence Low?<br/>or High Risk?"}
+        Explanation["6. Explanation Node<br/>(Gemini 3.1 Flash Lite)"]
+        EndNode(((End)))
+    end
+    
+    Client -->|Submits Property Details| EvaluateAPI
+    EvaluateAPI --> Intake
+    Intake --> Location
+    Location --> Comps
+    Comps --> MockAPI
+    MockAPI --> Reconcile
+    Reconcile --> Decision
+    
+    Decision -->|"Yes (Review Required)"| Pause(("Interrupt<br/>(MemorySaver)"))
+    Pause -.->|Returns Status: PENDING| Client
+    
+    Client -->|Underwriter Approves| ResumeAPI
+    ResumeAPI --> Explanation
+    
+    Decision -->|"No (High Confidence)"| Explanation
+    Explanation --> EndNode
+    EndNode -->|Returns Final JSON Package| Client
+```
+
 - **LangGraph Orchestration**: Stateful workflow that handles Intake -> Geocoding -> Comps Retrieval -> Market API -> Reconciliation -> Explanation.
 - **Dual-Engine Valuation**: Reconciles an internal comparable sales database against an external market valuation benchmark.
 - **Human-in-the-Loop (HITL)**: Asynchronous REST endpoints allow the workflow to pause execution when confidence is low, requiring an underwriter to review and approve the valuation before generating the final report.
