@@ -1,21 +1,39 @@
 """FastAPI application — exposes underwriting API endpoints."""
 from __future__ import annotations
 
-from typing import Any
+import os
+import shutil
+import tempfile
+from typing import Any, List, Optional, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.graph.state import UnderwritingState
 from app.graph.workflow import build_underwriting_graph
 from app.models.decision import DecisionResult
 from app.services.audit import audit_store, create_audit_record
+from app.document_ingestion.agent import DocumentIngestionAgent
+from app.models.document_ingestion_state import DocumentIngestionOutput
 
 app = FastAPI(
     title="Mortgage Underwriting API",
-    description="Agentic AI Mortgage Underwriting Decision Agent",
+    description="Agentic AI Mortgage Underwriting System — Document Ingestion + Decision Agent",
     version="0.1.0",
 )
+
+# Enable CORS for frontend integration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory session cache for processed document ingestion packages
+PROCESSED_APPLICATIONS: Dict[str, DocumentIngestionOutput] = {}
 
 
 class UnderwritingRequest(BaseModel):
@@ -94,3 +112,130 @@ async def get_report(application_id: str) -> dict[str, Any]:
     if not records:
         raise HTTPException(status_code=404, detail="No records found for this application")
     return {"application_id": application_id, "audit_records": records}
+
+
+# -------------------------------------------------------
+# Document Ingestion Agent Endpoints
+# -------------------------------------------------------
+
+
+@app.post("/api/v1/ingest/upload-and-process", response_model=DocumentIngestionOutput)
+async def upload_and_process_documents(
+    application_id: str = Form("APP-2026-001"),
+    borrower_id: str = Form("BORR-2026-001"),
+    files: List[UploadFile] = File(...),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided for ingestion.")
+
+    temp_dir = tempfile.mkdtemp(prefix=f"mortgage_{application_id}_")
+    saved_paths = []
+
+    try:
+        for file in files:
+            file_path = os.path.join(temp_dir, file.filename)
+            with open(file_path, "wb") as f:
+                content = await file.read()
+                f.write(content)
+            saved_paths.append(file_path)
+
+        output = DocumentIngestionAgent.process_document_bundle(
+            file_paths=saved_paths,
+            application_id=application_id,
+            borrower_id=borrower_id,
+        )
+
+        PROCESSED_APPLICATIONS[application_id] = output
+        return output
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@app.get("/api/v1/ingest/state/{application_id}", response_model=DocumentIngestionOutput)
+async def get_ingestion_state(application_id: str):
+    if application_id not in PROCESSED_APPLICATIONS:
+        raise HTTPException(status_code=404, detail=f"Application ID '{application_id}' not found.")
+    return PROCESSED_APPLICATIONS[application_id]
+
+
+@app.post("/api/v1/ingest/demo/{scenario_name}", response_model=DocumentIngestionOutput)
+async def run_demo_scenario(
+    scenario_name: str,
+    application_id: Optional[str] = None,
+):
+    from tests.mock_data.generate_docs import generate_all_mock_scenarios
+
+    scenarios = generate_all_mock_scenarios()
+    scenario_map = {
+        "clean": "clean_prime",
+        "name_mismatch": "name_discrepancy",
+        "salary_mismatch": "salary_discrepancy",
+        "missing_docs": "missing_docs",
+    }
+
+    key = scenario_map.get(scenario_name.lower())
+    if not key or key not in scenarios:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scenario '{scenario_name}'. Valid options: {list(scenario_map.keys())}",
+        )
+
+    app_id = application_id or f"APP-DEMO-{scenario_name.upper()}-2026"
+    files = scenarios[key]
+
+    output = DocumentIngestionAgent.process_document_bundle(
+        file_paths=files,
+        application_id=app_id,
+        borrower_id=f"BORR-{scenario_name.upper()}-001",
+    )
+
+    PROCESSED_APPLICATIONS[app_id] = output
+    return output
+
+
+class HITLOverrideRequest(BaseModel):
+    application_id: str
+    field_path: str
+    overridden_value: Any
+    underwriter_notes: str
+    underwriter_id: str = "UW-ADMIN-01"
+
+
+class HITLOverrideResponse(BaseModel):
+    status: str
+    message: str
+    application_id: str
+    updated_field: str
+    new_value: Any
+
+
+@app.post("/api/v1/ingest/hitl/override", response_model=HITLOverrideResponse)
+async def hitl_field_override(request: HITLOverrideRequest):
+    if request.application_id not in PROCESSED_APPLICATIONS:
+        raise HTTPException(status_code=404, detail=f"Application '{request.application_id}' not found.")
+
+    output = PROCESSED_APPLICATIONS[request.application_id]
+
+    field_parts = request.field_path.split(".")
+    target_obj = output
+
+    try:
+        for p in field_parts[:-1]:
+            target_obj = getattr(target_obj, p)
+        setattr(target_obj, field_parts[-1], request.overridden_value)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not apply override on path '{request.field_path}': {e}")
+
+    output.audit_log.append(
+        f"[HITL OVERRIDE by {request.underwriter_id}] Modified '{request.field_path}' to '{request.overridden_value}'. "
+        f"Reason: {request.underwriter_notes}"
+    )
+
+    return HITLOverrideResponse(
+        status="SUCCESS",
+        message="Field override applied and recorded in audit log.",
+        application_id=request.application_id,
+        updated_field=request.field_path,
+        new_value=request.overridden_value,
+    )
