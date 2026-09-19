@@ -131,4 +131,8 @@ def doc_ingestion_to_analysis_node(state: UnderwritingState) -> dict[str, Any]:
     if not (pan and aadhaar):
         document_analysis["flags"].append("incomplete_kyc")
     
-    return {"document_analysis": document_analysis, "errors": errors}
+    return {
+        "document_analysis": document_analysis,
+        "doc_ingestion_output": state.get("doc_ingestion_output", {}),
+        "errors": errors,
+    }
