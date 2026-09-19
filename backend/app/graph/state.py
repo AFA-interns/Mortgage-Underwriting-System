@@ -6,14 +6,23 @@ from typing import Any, TypedDict
 
 class UnderwritingState(TypedDict, total=False):
     application_id: str
+    borrower_id: str
     borrower_profile: dict[str, Any]
     documents: list[dict[str, Any]]
 
+    # Document Ingestion inputs
+    raw_document_paths: list[str]
+
     # Upstream agent outputs
     document_analysis: dict[str, Any]
+    doc_ingestion_output: dict[str, Any]
     credit_analysis: dict[str, Any]
     property_analysis: dict[str, Any]
     compliance_analysis: dict[str, Any]
+
+    # Workflow control
+    current_step: str
+    status: str
 
     # Optional pre-fetched/synthetic credit bureau report, keyed by
     # application_id. When absent, app.graph.nodes.credit falls back to the

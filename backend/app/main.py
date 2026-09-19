@@ -38,6 +38,7 @@ PROCESSED_APPLICATIONS: Dict[str, DocumentIngestionOutput] = {}
 
 class UnderwritingRequest(BaseModel):
     application_id: str
+    raw_document_paths: list[str] = []
     borrower_profile: dict[str, Any] = {}
     document_analysis: dict[str, Any] = {}
     credit_analysis: dict[str, Any] = {}
@@ -55,6 +56,7 @@ async def run_underwriting(application_id: str, request: UnderwritingRequest) ->
     """Run the full Decision Agent pipeline."""
     state: UnderwritingState = {
         "application_id": application_id,
+        "raw_document_paths": request.raw_document_paths,
         "borrower_profile": request.borrower_profile,
         "document_analysis": request.document_analysis,
         "credit_analysis": request.credit_analysis,
