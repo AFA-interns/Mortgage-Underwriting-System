@@ -2,17 +2,24 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from contextlib import suppress
 from typing import Any
 
-from crewai import Agent, Crew, Process, Task
+from crewai import LLM, Agent, Crew, Process, Task
 
 from app.models.decision import (
     CrewMemberOutput,
     CrewRole,
     DecisionCrewOutput,
     DecisionType,
+)
+from app.services.llm import build_llm
+from app.tools.policy_validator import (
+    ConfidenceCalculatorTool,
+    PolicyValidatorTool,
+    RiskCalculatorTool,
 )
 
 
@@ -82,11 +89,36 @@ def _build_case_summary(
     return "\n".join(parts)
 
 
+def _extract_json(raw: str) -> dict[str, Any] | None:
+    """Extract a JSON object from LLM output, tolerating markdown/prose wrapper."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-z]*\s*", "", text, flags=re.IGNORECASE)
+        text = text.rstrip("`").strip()
+
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else None
+    except json.JSONDecodeError:
+        pass
+
+    start, end = text.find("{"), text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            data = json.loads(text[start : end + 1])
+            return data if isinstance(data, dict) else None
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
 def _parse_crew_output(raw: str, role: CrewRole) -> CrewMemberOutput:
     """Parse LLM crew output into structured CrewMemberOutput."""
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    data = _extract_json(raw)
+    if data is None:
         return CrewMemberOutput(
             role=role,
             reasoning=raw if isinstance(raw, str) else str(raw),
@@ -108,120 +140,154 @@ def _parse_crew_output(raw: str, role: CrewRole) -> CrewMemberOutput:
     )
 
 
+def _build_gate_summary(
+    case: dict[str, Any], confidence: dict, contradictions: list[dict]
+) -> str:
+    """Serialize the known deterministic safety gates for the policy validator tool."""
+    compliance = case.get("compliance_analysis", {})
+    gates = {
+        "critical_compliance": bool(compliance.get("critical_flags")),
+        "missing_inputs": False,
+        "unresolved_critical_contradiction": any(
+            c.get("resolution") == "UNRESOLVED"
+            and c.get("severity") in ("HIGH", "CRITICAL")
+            for c in contradictions
+        ),
+        "below_confidence_threshold": bool(confidence.get("below_threshold")),
+    }
+    return json.dumps(gates)
+
+
 def run_decision_crew(
     case: dict[str, Any],
     risk: dict,
     confidence: dict,
     contradictions: list[dict],
+    llm: LLM | None = None,
 ) -> DecisionCrewOutput:
     """Execute the CrewAI Decision Crew with three role-based agents."""
     start_time = time.time()
 
+    if llm is None:
+        llm = build_llm()
+    llm_kwargs: dict[str, Any] = {"llm": llm} if llm is not None else {}
+
     case_summary = _build_case_summary(case, risk, confidence, contradictions)
-
-    underwriter = Agent(
-        role="Senior Mortgage Underwriter",
-        goal=(
-            "Review the structured mortgage application case and produce a recommendation "
-            "(APPROVE, DENY, or SUSPEND) with reasoning and confidence."
-        ),
-        backstory=(
-            "You are a seasoned mortgage underwriter with 20+ years of experience "
-            "in Indian housing finance. "
-            "You evaluate applications holistically, considering credit, property, "
-            "compliance, and risk factors. "
-            "You are conservative and evidence-driven."
-        ),
-        verbose=False,
-        allow_delegation=False,
-    )
-
-    risk_analyst = Agent(
-        role="Risk Analyst",
-        goal=(
-            "Independently challenge the underwriting assessment. Identify overlooked risks, "
-            "inconsistencies, and weaknesses. Provide your own recommendation."
-        ),
-        backstory=(
-            "You are a meticulous risk analyst who scrutinizes every detail. "
-            "You focus on what could go wrong and test assumptions made by the underwriter. "
-            "You flag any hidden risks or inconsistencies."
-        ),
-        verbose=False,
-        allow_delegation=False,
-    )
-
-    report_writer = Agent(
-        role="Report Writer",
-        goal=(
-            "Produce a clear, evidence-backed rationale for the decision. "
-            "Do not change the decision — only communicate it clearly."
-        ),
-        backstory=(
-            "You are a financial report writer who specializes in regulatory "
-            "and audit-ready documentation. "
-            "You produce concise, evidence-backed narratives suitable "
-            "for human reviewers and auditors."
-        ),
-        verbose=False,
-        allow_delegation=False,
-    )
-
-    underwriter_task = Task(
-        description=(
-            f"Analyze the following mortgage application case and provide your recommendation.\n\n"
-            f"{case_summary}\n\n"
-            "Respond in JSON format:\n"
-            '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
-            '"reasoning": "...", "key_factors": [...], '
-            '"risks_identified": [...], "missing_information": [...]}'
-        ),
-        expected_output=(
-            "JSON with recommendation, confidence, reasoning, key_factors, "
-            "risks_identified, missing_information"
-        ),
-        agent=underwriter,
-    )
-
-    risk_analyst_task = Task(
-        description=(
-            "Independently assess the risk of this mortgage application.\n\n"
-            f"{case_summary}\n\n"
-            "Provide your independent assessment and identify any risks "
-            "the underwriter may have missed.\n"
-            "Respond in JSON format:\n"
-            '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
-            '"reasoning": "...", "key_factors": [...], '
-            '"risks_identified": [...], "missing_information": [...]}'
-        ),
-        expected_output=(
-            "JSON with recommendation, confidence, reasoning, key_factors, "
-            "risks_identified, missing_information"
-        ),
-        agent=risk_analyst,
-        context=[underwriter_task],
-    )
-
-    report_writer_task = Task(
-        description=(
-            "Based on the underwriter's and risk analyst's assessments, produce a clear "
-            "rationale for the final decision. Include positive factors, risk factors, "
-            "and any missing information.\n\n"
-            f"Underwriter recommendation: {risk.get('score', 'N/A')}/100 risk score.\n\n"
-            "Respond in JSON format:\n"
-            '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
-            '"reasoning": "...", "key_factors": [...], '
-            '"risks_identified": [...], "missing_information": [...]}'
-        ),
-        expected_output=(
-            "JSON with recommendation, confidence, reasoning, key_factors, "
-            "risks_identified, missing_information"
-        ),
-        agent=report_writer,
-        context=[underwriter_task, risk_analyst_task],
+    risk_tool = RiskCalculatorTool(risk_json=json.dumps(risk))
+    confidence_tool = ConfidenceCalculatorTool(confidence_json=json.dumps(confidence))
+    policy_tool = PolicyValidatorTool(
+        gates_json=_build_gate_summary(case, confidence, contradictions)
     )
 
     try:
+        underwriter = Agent(
+            role="Senior Mortgage Underwriter",
+            goal=(
+                "Review the structured mortgage application case and produce a recommendation "
+                "(APPROVE, DENY, or SUSPEND) with reasoning and confidence."
+            ),
+            backstory=(
+                "You are a seasoned mortgage underwriter with 20+ years of experience "
+                "in Indian housing finance. "
+                "You evaluate applications holistically, considering credit, property, "
+                "compliance, and risk factors. "
+                "You are conservative and evidence-driven."
+            ),
+            verbose=False,
+            allow_delegation=False,
+            tools=[risk_tool, confidence_tool],
+            **llm_kwargs,
+        )
+
+        risk_analyst = Agent(
+            role="Risk Analyst",
+            goal=(
+                "Independently challenge the underwriting assessment. Identify overlooked risks, "
+                "inconsistencies, and weaknesses. Provide your own recommendation."
+            ),
+            backstory=(
+                "You are a meticulous risk analyst who scrutinizes every detail. "
+                "You focus on what could go wrong and test assumptions made by the underwriter. "
+                "You flag any hidden risks or inconsistencies."
+            ),
+            verbose=False,
+            allow_delegation=False,
+            tools=[risk_tool, confidence_tool, policy_tool],
+            **llm_kwargs,
+        )
+
+        report_writer = Agent(
+            role="Report Writer",
+            goal=(
+                "Produce a clear, evidence-backed rationale for the decision. "
+                "Do not change the decision — only communicate it clearly."
+            ),
+            backstory=(
+                "You are a financial report writer who specializes in regulatory "
+                "and audit-ready documentation. "
+                "You produce concise, evidence-backed narratives suitable "
+                "for human reviewers and auditors."
+            ),
+            verbose=False,
+            allow_delegation=False,
+            **llm_kwargs,
+        )
+
+        underwriter_task = Task(
+            description=(
+                f"Analyze the following mortgage application case and provide "
+                f"your recommendation.\n\n"
+                f"{case_summary}\n\n"
+                "Respond in JSON format:\n"
+                '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
+                '"reasoning": "...", "key_factors": [...], '
+                '"risks_identified": [...], "missing_information": [...]}'
+            ),
+            expected_output=(
+                "JSON with recommendation, confidence, reasoning, key_factors, "
+                "risks_identified, missing_information"
+            ),
+            agent=underwriter,
+        )
+
+        risk_analyst_task = Task(
+            description=(
+                "Independently assess the risk of this mortgage application.\n\n"
+                f"{case_summary}\n\n"
+                "Provide your independent assessment and identify any risks "
+                "the underwriter may have missed.\n"
+                "Respond in JSON format:\n"
+                '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
+                '"reasoning": "...", "key_factors": [...], '
+                '"risks_identified": [...], "missing_information": [...]}'
+            ),
+            expected_output=(
+                "JSON with recommendation, confidence, reasoning, key_factors, "
+                "risks_identified, missing_information"
+            ),
+            agent=risk_analyst,
+            context=[underwriter_task],
+        )
+
+        report_writer_task = Task(
+            description=(
+                "Based on the underwriter's and risk analyst's assessments, produce a clear "
+                "rationale for the final decision. Include positive factors, risk factors, "
+                "and any missing information.\n\n"
+                f"Deterministic risk score: {risk.get('score', 'N/A')}/100.\n\n"
+                "Respond in JSON format:\n"
+                '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
+                '"reasoning": "...", "key_factors": [...], '
+                '"risks_identified": [...], "missing_information": [...]}'
+            ),
+            expected_output=(
+                "JSON with recommendation, confidence, reasoning, key_factors, "
+                "risks_identified, missing_information"
+            ),
+            agent=report_writer,
+            context=[underwriter_task, risk_analyst_task],
+        )
+
         crew = Crew(
             agents=[underwriter, risk_analyst, report_writer],
             tasks=[underwriter_task, risk_analyst_task, report_writer_task],
