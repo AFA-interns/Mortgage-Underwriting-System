@@ -9,6 +9,7 @@ from app.graph.nodes.credit import credit_node
 from app.graph.nodes.property_valuation import property_valuation_node
 from app.graph.nodes.compliance import compliance_node
 from app.graph.nodes.decision import decision_node
+from app.graph.nodes.doc_ingestion_to_analysis import doc_ingestion_to_analysis_node
 from app.graph.state import UnderwritingState
 
 
@@ -33,6 +34,7 @@ def build_underwriting_graph() -> StateGraph:
 
     # Agent nodes
     graph.add_node("document_ingestion", document_ingestion_node)
+    graph.add_node("doc_ingestion_to_analysis", doc_ingestion_to_analysis_node)
     graph.add_node("credit_analysis", credit_node)
     graph.add_node("property_valuation", property_valuation_node)
     graph.add_node("compliance", compliance_node)
@@ -45,10 +47,11 @@ def build_underwriting_graph() -> StateGraph:
     # Entry point
     graph.set_entry_point("document_ingestion")
 
-    # Document Ingestion fans out to Credit + Property + Compliance (parallel)
-    graph.add_edge("document_ingestion", "credit_analysis")
-    graph.add_edge("document_ingestion", "property_valuation")
-    graph.add_edge("document_ingestion", "compliance")
+    # Document Ingestion -> Transform -> Credit + Property + Compliance (parallel)
+    graph.add_edge("document_ingestion", "doc_ingestion_to_analysis")
+    graph.add_edge("doc_ingestion_to_analysis", "credit_analysis")
+    graph.add_edge("doc_ingestion_to_analysis", "property_valuation")
+    graph.add_edge("doc_ingestion_to_analysis", "compliance")
 
     # All three converge to Decision
     graph.add_edge("credit_analysis", "decision")

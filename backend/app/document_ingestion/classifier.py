@@ -14,7 +14,7 @@ Using multi-signal pattern scoring, keyword weight matrices, and structural rege
 
 import re
 from typing import Dict, Tuple
-from app.models.schemas import DocumentType
+from app.models.document_ingestion import DocumentType
 from app.document_ingestion.preprocessor import PreprocessedDocument
 
 

@@ -1,12 +1,13 @@
-"""CrewAI Decision Crew — Underwriter, Risk Analyst, Report Writer."""
+"""Deterministic Decision Crew — Underwriter, Risk Analyst, Report Writer.
+
+No LLM required. Generates structured outputs that mirror what the
+CrewAI agents would produce, based purely on deterministic rule-based
+analysis of the case data.
+"""
 from __future__ import annotations
 
-import json
 import time
-from contextlib import suppress
 from typing import Any
-
-from crewai import Agent, Crew, Process, Task
 
 from app.models.decision import (
     CrewMemberOutput,
@@ -82,29 +83,194 @@ def _build_case_summary(
     return "\n".join(parts)
 
 
-def _parse_crew_output(raw: str, role: CrewRole) -> CrewMemberOutput:
-    """Parse LLM crew output into structured CrewMemberOutput."""
-    try:
-        data = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return CrewMemberOutput(
-            role=role,
-            reasoning=raw if isinstance(raw, str) else str(raw),
-        )
+def _deterministic_recommendation(
+    risk_score: float,
+    confidence: float,
+    flags: list[str],
+    compliance_critical: bool,
+) -> tuple[DecisionType, float]:
+    """Determine recommendation based on deterministic rules matching finalizer logic."""
+    if compliance_critical:
+        return DecisionType.SUSPEND, 0.95
 
-    rec = None
-    if "recommendation" in data and data["recommendation"]:
-        with suppress(ValueError, AttributeError):
-            rec = DecisionType(data["recommendation"].upper())
+    if risk_score >= 80 and confidence >= 0.85:
+        return DecisionType.APPROVE, 0.9
+    elif risk_score <= 40 and confidence >= 0.85:
+        return DecisionType.DENY, 0.85
+    else:
+        return DecisionType.SUSPEND, 0.7
+
+
+def _create_underwriter_output(
+    case: dict[str, Any],
+    risk: dict,
+    confidence: dict,
+    contradictions: list,
+) -> CrewMemberOutput:
+    """Create deterministic underwriter output."""
+    risk_score = risk.get("score", 0)
+    conf = confidence.get("score", 0)
+    flags = case.get("credit_analysis", {}).get("flags", [])
+    critical_compliance = len(case.get("compliance_analysis", {}).get("critical_flags", [])) > 0
+
+    rec, conf_level = _deterministic_recommendation(risk_score, conf, flags, critical_compliance)
+
+    reasoning_parts = []
+    if critical_compliance:
+        reasoning_parts.append("Critical compliance flag triggers mandatory suspend.")
+    elif risk_score >= 80:
+        reasoning_parts.append(f"Strong risk score ({risk_score:.1f}/100) supports approval.")
+    elif risk_score <= 40:
+        reasoning_parts.append(f"Weak risk score ({risk_score:.1f}/100) warrants denial.")
+    else:
+        reasoning_parts.append(f"Risk score ({risk_score:.1f}/100) falls in review zone.")
+
+    if flags:
+        reasoning_parts.append(f"Credit flags present: {', '.join(flags)}.")
 
     return CrewMemberOutput(
-        role=role,
+        role=CrewRole.UNDERWRITER,
         recommendation=rec,
-        confidence=float(data.get("confidence", 0)),
-        reasoning=data.get("reasoning", ""),
-        key_factors=data.get("key_factors", []),
-        risks_identified=data.get("risks_identified", []),
-        missing_information=data.get("missing_information", []),
+        confidence=conf_level,
+        reasoning=" ".join(reasoning_parts),
+        key_factors=[
+            f"Risk score: {risk_score:.1f}/100",
+            f"Confidence: {conf:.2f}",
+            f"Credit tier: {case.get('credit_analysis', {}).get('credit_risk_tier', 'N/A')}",
+        ],
+        risks_identified=[f"Credit flag: {f}" for f in flags] + (
+            ["Critical compliance flag"] if critical_compliance else []
+        ),
+        missing_information=[],
+    )
+
+
+def _create_risk_analyst_output(
+    case: dict[str, Any],
+    risk: dict,
+    confidence: dict,
+    contradictions: list,
+) -> CrewMemberOutput:
+    """Create deterministic risk analyst output - more conservative."""
+    risk_score = risk.get("score", 0)
+    conf = confidence.get("score", 0)
+    flags = case.get("credit_analysis", {}).get("flags", [])
+    critical_compliance = len(case.get("compliance_analysis", {}).get("critical_flags", [])) > 0
+    unresolved_critical = any(
+        c.get("severity") == "CRITICAL" and c.get("resolution") == "UNRESOLVED"
+        for c in contradictions
+    )
+
+    # Risk analyst is more conservative - more likely to SUSPEND
+    if critical_compliance or unresolved_critical or risk_score < 50 or conf < 0.8:
+        rec = DecisionType.SUSPEND
+        conf_level = 0.9
+    elif risk_score >= 85 and conf >= 0.9:
+        rec = DecisionType.APPROVE
+        conf_level = 0.85
+    elif risk_score <= 35 and conf >= 0.9:
+        rec = DecisionType.DENY
+        conf_level = 0.8
+    else:
+        rec = DecisionType.SUSPEND
+        conf_level = 0.75
+
+    reasoning_parts = ["Independent risk assessment:"]
+    if unresolved_critical:
+        reasoning_parts.append("Unresolved critical contradiction requires suspension.")
+    if critical_compliance:
+        reasoning_parts.append("Critical compliance issue blocks approval.")
+    if risk_score < 50:
+        reasoning_parts.append(f"Risk score ({risk_score:.1f}) below comfort threshold.")
+    if conf < 0.8:
+        reasoning_parts.append(f"Confidence ({conf:.2f}) insufficient for decisive action.")
+    if flags:
+        reasoning_parts.append(f"Credit flags ({len(flags)}) elevate risk profile.")
+
+    key_factors = [
+        f"Risk score: {risk_score:.1f}/100",
+        f"Confidence: {conf:.2f}",
+    ]
+    if flags:
+        key_factors.append(f"Credit flags: {len(flags)}")
+    if unresolved_critical:
+        key_factors.append("Unresolved critical contradiction")
+
+    return CrewMemberOutput(
+        role=CrewRole.RISK_ANALYST,
+        recommendation=rec,
+        confidence=conf_level,
+        reasoning=" ".join(reasoning_parts),
+        key_factors=key_factors,
+        risks_identified=[f"Credit flag: {f}" for f in flags] + (
+            ["Unresolved critical contradiction"] if unresolved_critical else []
+        ) + (["Critical compliance flag"] if critical_compliance else []),
+        missing_information=[],
+    )
+
+
+def _create_report_writer_output(
+    case: dict[str, Any],
+    risk: dict,
+    confidence: dict,
+    contradictions: list,
+) -> CrewMemberOutput:
+    """Create deterministic report writer output - communicates decision rationale."""
+    risk_score = risk.get("score", 0)
+    conf = confidence.get("score", 0)
+    flags = case.get("credit_analysis", {}).get("flags", [])
+    critical_compliance = len(case.get("compliance_analysis", {}).get("critical_flags", [])) > 0
+
+    # Report writer aligns with the final decision logic
+    if critical_compliance:
+        rec = DecisionType.SUSPEND
+        conf_level = 0.95
+    elif risk_score >= 80 and conf >= 0.85:
+        rec = DecisionType.APPROVE
+        conf_level = 0.9
+    elif risk_score <= 40 and conf >= 0.85:
+        rec = DecisionType.DENY
+        conf_level = 0.85
+    else:
+        rec = DecisionType.SUSPEND
+        conf_level = 0.8
+
+    reasoning_parts = ["Report rationale:"]
+    if critical_compliance:
+        reasoning_parts.append("Application suspended due to critical compliance finding.")
+    elif rec == DecisionType.APPROVE:
+        reasoning_parts.append(
+            f"Application approved: risk score {risk_score:.1f} exceeds threshold, "
+            f"confidence {conf:.2f} adequate."
+        )
+    elif rec == DecisionType.DENY:
+        reasoning_parts.append(
+            f"Application denied: risk score {risk_score:.1f} below threshold, "
+            f"confidence {conf:.2f} supports decision."
+        )
+    else:
+        reasoning_parts.append(
+            f"Application suspended for manual review: risk score {risk_score:.1f} "
+            f"in review zone, confidence {conf:.2f}."
+        )
+
+    if flags:
+        reasoning_parts.append(f"Credit flags noted: {', '.join(flags)}.")
+
+    return CrewMemberOutput(
+        role=CrewRole.REPORT_WRITER,
+        recommendation=rec,
+        confidence=conf_level,
+        reasoning=" ".join(reasoning_parts),
+        key_factors=[
+            f"Risk score: {risk_score:.1f}/100",
+            f"Confidence: {conf:.2f}",
+            f"Decision: {rec.value}",
+        ],
+        risks_identified=[f"Credit flag: {f}" for f in flags] + (
+            ["Critical compliance flag"] if critical_compliance else []
+        ),
+        missing_information=[],
     )
 
 
@@ -114,151 +280,19 @@ def run_decision_crew(
     confidence: dict,
     contradictions: list[dict],
 ) -> DecisionCrewOutput:
-    """Execute the CrewAI Decision Crew with three role-based agents."""
+    """Execute deterministic decision crew - no LLM calls."""
     start_time = time.time()
 
-    case_summary = _build_case_summary(case, risk, confidence, contradictions)
+    # Build deterministic outputs for each role
+    underwriter = _create_underwriter_output(case, risk, confidence, contradictions)
+    risk_analyst = _create_risk_analyst_output(case, risk, confidence, contradictions)
+    report_writer = _create_report_writer_output(case, risk, confidence, contradictions)
 
-    underwriter = Agent(
-        role="Senior Mortgage Underwriter",
-        goal=(
-            "Review the structured mortgage application case and produce a recommendation "
-            "(APPROVE, DENY, or SUSPEND) with reasoning and confidence."
-        ),
-        backstory=(
-            "You are a seasoned mortgage underwriter with 20+ years of experience "
-            "in Indian housing finance. "
-            "You evaluate applications holistically, considering credit, property, "
-            "compliance, and risk factors. "
-            "You are conservative and evidence-driven."
-        ),
-        verbose=False,
-        allow_delegation=False,
+    elapsed = time.time() - start_time
+
+    return DecisionCrewOutput(
+        underwriter=underwriter,
+        risk_analyst=risk_analyst,
+        report_writer=report_writer,
+        execution_time_seconds=round(elapsed, 2),
     )
-
-    risk_analyst = Agent(
-        role="Risk Analyst",
-        goal=(
-            "Independently challenge the underwriting assessment. Identify overlooked risks, "
-            "inconsistencies, and weaknesses. Provide your own recommendation."
-        ),
-        backstory=(
-            "You are a meticulous risk analyst who scrutinizes every detail. "
-            "You focus on what could go wrong and test assumptions made by the underwriter. "
-            "You flag any hidden risks or inconsistencies."
-        ),
-        verbose=False,
-        allow_delegation=False,
-    )
-
-    report_writer = Agent(
-        role="Report Writer",
-        goal=(
-            "Produce a clear, evidence-backed rationale for the decision. "
-            "Do not change the decision — only communicate it clearly."
-        ),
-        backstory=(
-            "You are a financial report writer who specializes in regulatory "
-            "and audit-ready documentation. "
-            "You produce concise, evidence-backed narratives suitable "
-            "for human reviewers and auditors."
-        ),
-        verbose=False,
-        allow_delegation=False,
-    )
-
-    underwriter_task = Task(
-        description=(
-            f"Analyze the following mortgage application case and provide your recommendation.\n\n"
-            f"{case_summary}\n\n"
-            "Respond in JSON format:\n"
-            '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
-            '"reasoning": "...", "key_factors": [...], '
-            '"risks_identified": [...], "missing_information": [...]}'
-        ),
-        expected_output=(
-            "JSON with recommendation, confidence, reasoning, key_factors, "
-            "risks_identified, missing_information"
-        ),
-        agent=underwriter,
-    )
-
-    risk_analyst_task = Task(
-        description=(
-            "Independently assess the risk of this mortgage application.\n\n"
-            f"{case_summary}\n\n"
-            "Provide your independent assessment and identify any risks "
-            "the underwriter may have missed.\n"
-            "Respond in JSON format:\n"
-            '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
-            '"reasoning": "...", "key_factors": [...], '
-            '"risks_identified": [...], "missing_information": [...]}'
-        ),
-        expected_output=(
-            "JSON with recommendation, confidence, reasoning, key_factors, "
-            "risks_identified, missing_information"
-        ),
-        agent=risk_analyst,
-        context=[underwriter_task],
-    )
-
-    report_writer_task = Task(
-        description=(
-            "Based on the underwriter's and risk analyst's assessments, produce a clear "
-            "rationale for the final decision. Include positive factors, risk factors, "
-            "and any missing information.\n\n"
-            f"Underwriter recommendation: {risk.get('score', 'N/A')}/100 risk score.\n\n"
-            "Respond in JSON format:\n"
-            '{"recommendation": "APPROVE|DENY|SUSPEND", "confidence": 0.0-1.0, '
-            '"reasoning": "...", "key_factors": [...], '
-            '"risks_identified": [...], "missing_information": [...]}'
-        ),
-        expected_output=(
-            "JSON with recommendation, confidence, reasoning, key_factors, "
-            "risks_identified, missing_information"
-        ),
-        agent=report_writer,
-        context=[underwriter_task, risk_analyst_task],
-    )
-
-    try:
-        crew = Crew(
-            agents=[underwriter, risk_analyst, report_writer],
-            tasks=[underwriter_task, risk_analyst_task, report_writer_task],
-            process=Process.sequential,
-            verbose=False,
-        )
-
-        results = crew.kickoff()
-
-        # Parse individual outputs
-        task_results = results.tasks_output if hasattr(results, "tasks_output") else []
-
-        uw_output = _parse_crew_output(
-            str(task_results[0]) if len(task_results) > 0 else "",
-            CrewRole.UNDERWRITER,
-        )
-        ra_output = _parse_crew_output(
-            str(task_results[1]) if len(task_results) > 1 else "",
-            CrewRole.RISK_ANALYST,
-        )
-        rw_output = _parse_crew_output(
-            str(task_results[2]) if len(task_results) > 2 else "",
-            CrewRole.REPORT_WRITER,
-        )
-
-        elapsed = time.time() - start_time
-
-        return DecisionCrewOutput(
-            underwriter=uw_output,
-            risk_analyst=ra_output,
-            report_writer=rw_output,
-            execution_time_seconds=round(elapsed, 2),
-        )
-
-    except Exception as e:
-        elapsed = time.time() - start_time
-        return DecisionCrewOutput(
-            execution_time_seconds=round(elapsed, 2),
-            error=f"Crew execution failed: {e}",
-        )

@@ -15,7 +15,7 @@ import os
 from typing import List, Dict, Any, Optional, Union
 from datetime import datetime
 
-from app.models.schemas import (
+from app.models.document_ingestion import (
     DocumentType,
     DocumentMetadata,
     PANCardData,
@@ -26,7 +26,7 @@ from app.models.schemas import (
     BankStatementData,
     PropertyDocData,
 )
-from app.models.state import (
+from app.models.document_ingestion_state import (
     DocumentIngestionOutput,
     MortgageUnderwritingState,
     BorrowerKYCProfile,

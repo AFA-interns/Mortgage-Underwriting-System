@@ -10,13 +10,13 @@ Tests:
 
 import os
 import pytest
-from app.models.schemas import DocumentType
+from app.models.document_ingestion import DocumentType
 from app.document_ingestion.preprocessor import DocumentPreprocessor
 from app.document_ingestion.classifier import DocumentClassifier
 from app.document_ingestion.validators import IndianDocumentValidators
 from app.document_ingestion.reconciliation import CrossDocumentReconciler, _compute_string_similarity
 from app.document_ingestion.agent import DocumentIngestionAgent, document_ingestion_node
-from app.mock_data.generate_docs import generate_all_mock_scenarios
+from tests.mock_data.generate_docs import generate_all_mock_scenarios
 
 
 @pytest.fixture(scope="session")

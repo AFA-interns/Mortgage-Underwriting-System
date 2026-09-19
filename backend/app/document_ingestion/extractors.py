@@ -6,7 +6,7 @@ Extracts strongly typed Pydantic entities with field-level provenance metadata
 
 import re
 from typing import Dict, List, Optional, Tuple, Any
-from app.models.schemas import (
+from app.models.document_ingestion import (
     FieldProvenance,
     PANCardData,
     AadhaarCardData,

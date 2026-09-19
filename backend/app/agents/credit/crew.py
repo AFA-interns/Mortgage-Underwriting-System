@@ -1,16 +1,11 @@
-"""CrewAI Credit reasoning - a single agent that explains the already-final
-rule-based credit assessment.
+"""Deterministic credit reasoning — explains the already-final rule-based credit assessment.
 
-It must NOT change preliminary_decision - the task prompt explicitly
-forbids proposing a different one, matching how the Decision Agent's own
-Report Writer role communicates a decision without changing it (see
-app.agents.decision.crew).
+No LLM required. The task explicitly forbids proposing a different decision -
+this only communicates the reasoning clearly.
 """
 from __future__ import annotations
 
 from typing import Any
-
-from crewai import Agent, Crew, Process, Task
 
 
 def _build_credit_summary(borrower: dict[str, Any], credit_result: dict[str, Any]) -> str:
@@ -38,56 +33,41 @@ def _build_credit_summary(borrower: dict[str, Any], credit_result: dict[str, Any
 
 
 def run_credit_reasoning(borrower: dict[str, Any], credit_result: dict[str, Any]) -> str:
-    """Execute a single CrewAI agent to explain the preliminary credit
-    decision in plain language for the Decision Agent / an eventual
-    applicant-facing summary. Any failure (LLM outage, parse error) degrades
-    to a deterministic fallback string rather than raising - mirrors
-    app.agents.decision.crew's failure handling."""
-    summary = _build_credit_summary(borrower, credit_result)
+    """Generate a deterministic plain-language explanation of the credit risk assessment.
+    No LLM calls - purely rule-based explanation matching the deterministic
+    credit analysis output."""
+    cibil = credit_result.get('cibil_score')
+    band = credit_result.get('credit_band', 'N/A')
+    foir = credit_result.get('foir')
+    ltv = credit_result.get('ltv')
+    flags = credit_result.get('flags', [])
+    risk_score = credit_result.get('risk_score', 'N/A')
+    prelim = credit_result.get('preliminary_decision', 'N/A')
 
-    try:
-        credit_analyst = Agent(
-            role="Credit Risk Analyst",
-            goal=(
-                "Explain a mortgage applicant's already-finalized credit risk "
-                "assessment clearly and concisely, for another automated agent "
-                "and an eventual applicant-facing summary."
-            ),
-            backstory=(
-                "You are a credit analyst at an Indian housing finance company. "
-                "You do not make lending decisions yourself - you explain "
-                "decisions already reached by deterministic underwriting rules, "
-                "in plain, evidence-backed language."
-            ),
-            verbose=False,
-            allow_delegation=False,
-        )
+    parts = []
 
-        explain_task = Task(
-            description=(
-                "Explain the credit risk assessment below in 2-4 concise "
-                "sentences. Do NOT propose a different decision than the one "
-                "given - your only job is to explain the reasoning clearly.\n\n"
-                f"{summary}"
-            ),
-            expected_output="A 2-4 sentence plain-language explanation.",
-            agent=credit_analyst,
-        )
+    if cibil is not None:
+        parts.append(f"CIBIL score of {cibil} places the applicant in the {band} band.")
+    else:
+        parts.append("No credit history available; assessed as New-to-Credit.")
 
-        crew = Crew(
-            agents=[credit_analyst],
-            tasks=[explain_task],
-            process=Process.sequential,
-            verbose=False,
-        )
-        result = crew.kickoff()
-        return str(result).strip()
+    if foir is not None:
+        if foir > 0.5:
+            parts.append(f"FOIR of {foir:.1%} exceeds typical thresholds, indicating high debt burden.")
+        else:
+            parts.append(f"FOIR of {foir:.1%} is within acceptable limits.")
 
-    except Exception as e:
-        return (
-            f"[LLM reasoning unavailable: {e}] Preliminary decision "
-            f"'{credit_result.get('preliminary_decision')}' was reached via rule-based "
-            f"scoring - credit_band={credit_result.get('credit_band')}, "
-            f"foir={credit_result.get('foir')}, flags={credit_result.get('flags')}, "
-            f"risk_score={credit_result.get('risk_score')}."
-        )
+    if ltv is not None:
+        if ltv > 0.8:
+            parts.append(f"LTV of {ltv:.1%} is high, limiting equity cushion.")
+        else:
+            parts.append(f"LTV of {ltv:.1%} provides adequate collateral coverage.")
+
+    if flags:
+        parts.append(f"Red flags detected: {', '.join(flags)}.")
+    else:
+        parts.append("No material red flags identified.")
+
+    parts.append(f"Composite risk score: {risk_score}/100. Preliminary decision: {prelim}.")
+
+    return " ".join(parts)

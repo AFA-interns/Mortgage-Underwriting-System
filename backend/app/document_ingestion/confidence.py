@@ -5,7 +5,7 @@ mandatory document checklists, and triggers Human Underwriter review.
 """
 
 from typing import List, Dict, Optional, Tuple, Any
-from app.models.schemas import (
+from app.models.document_ingestion import (
     PANCardData,
     AadhaarCardData,
     SalarySlipData,
@@ -15,7 +15,7 @@ from app.models.schemas import (
     PropertyDocData,
     DocumentMetadata,
 )
-from app.models.state import (
+from app.models.document_ingestion_state import (
     ConfidenceBreakdown,
     MissingDocumentsCheck,
     HumanReviewRouting,

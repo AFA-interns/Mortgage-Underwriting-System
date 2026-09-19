@@ -10,7 +10,7 @@ Performs multi-document entity resolution:
 
 import re
 from typing import List, Dict, Optional, Tuple, Any
-from app.models.schemas import (
+from app.models.document_ingestion import (
     PANCardData,
     AadhaarCardData,
     SalarySlipData,
@@ -18,7 +18,7 @@ from app.models.schemas import (
     BankStatementData,
     PropertyDocData,
 )
-from app.models.state import (
+from app.models.document_ingestion_state import (
     NameMatchResult,
     SalaryReconciliationResult,
     EmployerReconciliationResult,
