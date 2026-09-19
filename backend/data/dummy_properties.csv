@@ -1,0 +1,16 @@
+﻿id,locality,city,property_type,bhk,area_sqft,area_type,age_years,price_inr,price_per_sqft
+1,Indiranagar,Bangalore,Apartment,2,1200,carpet_area,5,15000000,12500
+2,Indiranagar,Bangalore,Apartment,2,1150,carpet_area,6,14500000,12608
+3,Indiranagar,Bangalore,Apartment,3,1600,carpet_area,4,21000000,13125
+4,Koramangala,Bangalore,Apartment,2,1300,carpet_area,2,17000000,13076
+5,Koramangala,Bangalore,Apartment,3,1800,carpet_area,8,22000000,12222
+6,Whitefield,Bangalore,Apartment,2,1100,carpet_area,1,10000000,9090
+7,Whitefield,Bangalore,Apartment,2,1050,carpet_area,3,9500000,9047
+8,Whitefield,Bangalore,Apartment,3,1500,carpet_area,2,14000000,9333
+9,Jayanagar,Bangalore,Independent House,4,2400,built_up_area,15,45000000,18750
+10,Jayanagar,Bangalore,Independent House,3,1800,built_up_area,20,35000000,19444
+11,Bandra West,Mumbai,Apartment,2,800,carpet_area,10,35000000,43750
+12,Bandra West,Mumbai,Apartment,3,1200,carpet_area,15,50000000,41666
+13,Andheri East,Mumbai,Apartment,2,900,carpet_area,5,18000000,20000
+14,Andheri East,Mumbai,Apartment,1,600,carpet_area,3,12000000,20000
+15,Indiranagar,Bangalore,Apartment,2,1250,carpet_area,5,15500000,12400

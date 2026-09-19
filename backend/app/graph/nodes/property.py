@@ -1,4 +1,4 @@
-﻿import os
+import os
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.tools.geocoder import geocode_address
