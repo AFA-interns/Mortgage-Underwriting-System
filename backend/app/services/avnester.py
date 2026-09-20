@@ -5,21 +5,28 @@ from typing import Any
 import httpx
 
 
-AVNESTER_URL = (
-    "https://api.avnester.com/public/v1/search_properties"
-)
+AVNESTER_URL = "https://api.avnester.com/public/v1/search_properties"
 
 
-def search_properties(
+async def search_properties(
     filters: dict[str, Any],
 ) -> dict[str, Any]:
     """
     Search property listings using the AVnester public API.
+
+    Args:
+        filters: Property search filters expected by AVnester.
+
+    Returns:
+        JSON response returned by the AVnester API.
+
+    Raises:
+        httpx.HTTPStatusError: If AVnester returns a non-2xx response.
+        httpx.RequestError: If the request cannot reach AVnester.
     """
 
-    with httpx.Client(timeout=30.0) as client:
-
-        response = client.post(
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
             AVNESTER_URL,
             json=filters,
         )
