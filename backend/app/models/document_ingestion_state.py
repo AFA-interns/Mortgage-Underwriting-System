@@ -136,6 +136,7 @@ class BorrowerLiabilitiesProfile(BaseModel):
 class PropertyProfile(BaseModel):
     property_title: Optional[str] = None
     property_address: Optional[str] = None
+    locality: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
     pincode: Optional[str] = None
@@ -146,6 +147,7 @@ class PropertyProfile(BaseModel):
     seller_or_builder_name: Optional[str] = None
     buyer_or_owner_name: Optional[str] = None
     registration_number: Optional[str] = None
+
 
 
 # -------------------------------------------------------------

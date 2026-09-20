@@ -32,12 +32,12 @@ class DocumentExtractors:
     def extract_pan(cls, doc: PreprocessedDocument) -> PANCardData:
         text = doc.raw_text
         provenance: Dict[str, FieldProvenance] = {}
-        
+
         # 1. PAN Number extraction: 5 letters, 4 digits, 1 letter
         pan_regex = re.compile(r"\b([A-Z]{5}[0-9]{4}[A-Z])\b")
         pan_match = pan_regex.search(text)
         pan_number = pan_match.group(1) if pan_match else None
-        
+
         if pan_match:
             provenance["pan_number"] = FieldProvenance(
                 source_document=doc.filename,
@@ -69,7 +69,7 @@ class DocumentExtractors:
         # 3. Full Name and Father's Name extraction
         full_name = None
         father_name = None
-        
+
         # Name patterns
         name_match = re.search(r"(?:Name|Name\s*[:\-])\s*([A-Za-z\s]{3,40})(?:\n|Father|DOB|$)", text, re.I)
         if name_match:
@@ -408,7 +408,7 @@ class DocumentExtractors:
         if gross_salary > 0 and net_salary > 0:
             if total_deductions == 0.0 and len(deductions) > 0:
                 total_deductions = sum(d.amount for d in deductions)
-            
+
             calculated_net = gross_salary - total_deductions
             if abs(calculated_net - net_salary) <= 1.0 or abs(gross_salary - (net_salary + total_deductions)) <= 1.0:
                 arithmetic_valid = True
@@ -687,7 +687,7 @@ class DocumentExtractors:
         salary_credits: List[BankTransactionSummary] = []
         recurring_emis: List[BankTransactionSummary] = []
         bounce_count = 0
-        
+
         # Check for bounce counts explicitly
         bounce_match = re.search(r"(?:Inward\s*(?:Cheque|ECS|NACH)\s*Returns?|Bounce\s*Count)\s*[:\-]?\s*(\d+)", text, re.I)
         if bounce_match:
@@ -713,7 +713,7 @@ class DocumentExtractors:
                         d_match = date_pattern.search(row_str)
                         amounts = [float(a.replace(",", "")) for a in amt_pattern.findall(row_str)]
                         tx_date = d_match.group(1) if d_match else "N/A"
-                        
+
                         if is_salary and amounts:
                             # For salary credit, pick the non-zero amount that is not the large running balance
                             # e.g., amounts = [0.0, 124600.0, 210000.0] -> credit is 124600.0
@@ -848,24 +848,24 @@ class DocumentExtractors:
                 confidence=0.90
             )
 
-        # 4. Property Address / Schedule
-        addr_match = re.search(r"(?:Property\s*Address|Schedule\s+(?:Property|of\s+Property|['\"]?A['\"]?))\s*[:\-]?\s*\n?\s*([^\n]+(?:\n[^\n]+)?)", text, re.I)
+        # 7. Property Address
         prop_address = None
-        if addr_match:
-            candidate = addr_match.group(1).strip().replace("\n", " ")
-            if not any(k in candidate.lower() for k in ["super built", "carpet", "consideration", "registration", "stamp duty"]):
-                prop_address = candidate
-            else:
-                # Take just the first line before keywords
-                first_part = addr_match.group(1).split("\n")[0].strip()
-                prop_address = first_part
+
+        address_match = re.search(
+            r"Property Address:\s*\n?\s*(.*?)(?=\n(?:Super Built-up Area|Carpet Area|Consideration Amount|Stamp Duty Paid):)",
+            text,
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        if address_match:
+            prop_address = address_match.group(1).strip()
 
         if prop_address:
             provenance["property_address"] = FieldProvenance(
                 source_document=doc.filename,
                 page_number=1,
                 raw_snippet=prop_address,
-                confidence=0.88
+                confidence=0.95,
             )
 
         # 5. Built-up / Carpet Area
@@ -903,17 +903,70 @@ class DocumentExtractors:
         pincode = pin_match.group(1) if pin_match else None
 
         city = None
-        cities = ["Bengaluru", "Bangalore", "Mumbai", "Delhi", "Hyderabad", "Chennai", "Pune", "Kolkata", "Noida", "Gurugram", "Ahmedabad"]
+        cities = [
+            "Bengaluru",
+            "Bangalore",
+            "Mumbai",
+            "Delhi",
+            "Hyderabad",
+            "Chennai",
+            "Pune",
+            "Kolkata",
+            "Noida",
+            "Gurugram",
+            "Ahmedabad",
+            "Coimbatore",
+            "Madurai",
+            "Tiruchirappalli",
+            "Tiruppur",
+            "Erode",
+            "Tirunelveli",
+            "Vellore",
+        ]
+
         for c in cities:
             if re.search(r"\b" + re.escape(c) + r"\b", text, re.I):
                 city = c
                 break
+
+        # 9. Locality
+        locality = None
+
+        if prop_address:
+            address_parts = [
+                part.strip()
+                for part in prop_address.split(",")
+                if part.strip()
+            ]
+
+            # Usually the locality is the part immediately before the city.
+            if city:
+                city_index = next(
+                    (
+                        i
+                        for i, part in enumerate(address_parts)
+                        if part.lower() == city.lower()
+                    ),
+                    None,
+                )
+
+                if city_index is not None and city_index > 0:
+                    locality = address_parts[city_index - 1]
+
+        if locality:
+            provenance["locality"] = FieldProvenance(
+                source_document=doc.filename,
+                page_number=1,
+                raw_snippet=locality,
+                confidence=0.85,
+            )
 
         return PropertyDocData(
             document_title=doc_title,
             property_address=prop_address,
             city=city,
             pincode=pincode,
+            locality=locality,
             property_type="Residential Flat",
             seller_or_builder_name=seller_name,
             buyer_or_owner_name=buyer_name,
@@ -921,5 +974,5 @@ class DocumentExtractors:
             carpet_area_sqft=carpet_area,
             purchase_or_market_value=purchase_val,
             registration_number=reg_no,
-            provenance=provenance
+            provenance=provenance,
         )

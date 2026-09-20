@@ -254,20 +254,21 @@ class DocumentIngestionAgent:
         # 4. Property Profile (for Property Valuation Agent)
         prop_profile = None
         if property_doc:
-            prop_profile = PropertyProfile(
-                property_title=property_doc.document_title,
-                property_address=property_doc.property_address,
-                city=property_doc.city,
-                pincode=property_doc.pincode,
-                property_type=property_doc.property_type,
-                super_builtup_area_sqft=property_doc.super_builtup_area_sqft,
-                carpet_area_sqft=property_doc.carpet_area_sqft,
-                purchase_or_market_value=property_doc.purchase_or_market_value,
-                seller_or_builder_name=property_doc.seller_or_builder_name,
-                buyer_or_owner_name=property_doc.buyer_or_owner_name,
-                registration_number=property_doc.registration_number,
-            )
-
+           prop_profile = PropertyProfile(
+    property_title=property_doc.document_title,
+    property_address=property_doc.property_address,
+    locality=property_doc.locality,
+    city=property_doc.city,
+    state=property_doc.state,
+    pincode=property_doc.pincode,
+    property_type=property_doc.property_type,
+    super_builtup_area_sqft=property_doc.super_builtup_area_sqft,
+    carpet_area_sqft=property_doc.carpet_area_sqft,
+    purchase_or_market_value=property_doc.purchase_or_market_value,
+    seller_or_builder_name=property_doc.seller_or_builder_name,
+    buyer_or_owner_name=property_doc.buyer_or_owner_name,
+    registration_number=property_doc.registration_number,
+)
         audit_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Document Ingestion completed successfully.")
 
         return DocumentIngestionOutput(
