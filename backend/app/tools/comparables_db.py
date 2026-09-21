@@ -38,13 +38,7 @@ def normalize_property_type(property_type: str) -> str:
     return value
 
 
-def get_comparables(
-    locality: str,
-    city: str,
-    property_type: str,
-    bhk: int,
-    area_sqft: float
-) -> list[dict]:
+
 
 def _normalize_prop_type(prop_type: str) -> str:
     """Normalize property type for matching."""
