@@ -46,6 +46,17 @@ def get_comparables(
     area_sqft: float
 ) -> list[dict]:
 
+def _normalize_prop_type(prop_type: str) -> str:
+    """Normalize property type for matching."""
+    t = prop_type.lower().strip()
+    if t in ("apartment", "flat", "residential flat", "residence"):
+        return "apartment"
+    if t in ("independent house", "house", "villa", "bungalow"):
+        return "independent house"
+    return t
+
+
+def get_comparables(locality: str, city: str, property_type: str, bhk: int, area_sqft: float) -> list[dict]:
     if not os.path.exists(CSV_PATH):
         return []
 
@@ -73,7 +84,15 @@ def get_comparables(
     t_locality = locality.lower().strip()
     t_city = city.lower().strip()
     t_prop_type = normalize_property_type(property_type)
+    df['locality_clean'] = df['locality'].str.lower().str.strip()
+    df['city_clean'] = df['city'].str.lower().str.strip()
+    df['property_type_clean'] = df['property_type'].apply(_normalize_prop_type)
 
+    t_locality = locality.lower().strip()
+    t_city = city.lower().strip()
+    t_prop_type = _normalize_prop_type(property_type)
+
+    # Try exact locality + city match first
     mask = (
         (df["city_clean"] == t_city)
         & (df["locality_clean"] == t_locality)
@@ -81,6 +100,14 @@ def get_comparables(
     )
 
     filtered = df[mask]
+
+    # Fallback: city-only match if locality match failed or locality == city
+    if filtered.empty or t_locality == t_city:
+        mask = (
+            (df['city_clean'] == t_city) &
+            (df['property_type_clean'] == t_prop_type)
+        )
+        filtered = df[mask]
 
     if filtered.empty:
         return []
