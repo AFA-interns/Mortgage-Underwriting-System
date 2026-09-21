@@ -1,13 +1,13 @@
-import sys
-import os
 import json
-sys.path.insert(0, r'C:\Users\LAKSHYA VARSHNEY\OneDrive\Documents\My-code\Mortgage-Underwriting-System\backend')
 
 from app.graph.workflow import build_underwriting_graph
 from tests.mock_data.generate_docs import generate_all_mock_scenarios
 
+
+# Build and compile the underwriting graph
 graph = build_underwriting_graph()
 app = graph.compile()
+
 
 # Borrower profiles matching the mock document generator
 SCENARIO_PROFILES = {
@@ -57,42 +57,149 @@ SCENARIO_PROFILES = {
     },
 }
 
+
 print("Generating mock documents for all 4 scenarios...")
+
 scenarios = generate_all_mock_scenarios()
 
 for scenario_name, pdf_paths in scenarios.items():
+
     print("\n=== {} ===".format(scenario_name))
     print("  PDFs: {} files".format(len(pdf_paths)))
-    
+
     borrower = SCENARIO_PROFILES.get(scenario_name, {})
-    
+
     initial_state = {
-        'application_id': 'APP-SMOKE-{}'.format(scenario_name.upper()),
-        'borrower_id': 'BORR-{}'.format(scenario_name.upper()),
-        'raw_document_paths': pdf_paths,
-        'borrower_profile': borrower,
-        'document_analysis': {},
-        'credit_analysis': {},
-        'property_analysis': {},
-        'compliance_analysis': {},
-        'errors': [],
+        "application_id": "APP-SMOKE-{}".format(
+            scenario_name.upper()
+        ),
+        "borrower_id": "BORR-{}".format(
+            scenario_name.upper()
+        ),
+        "raw_document_paths": pdf_paths,
+        "borrower_profile": borrower,
+        "document_analysis": {},
+        "credit_analysis": {},
+        "property_analysis": {},
+        "compliance_analysis": {},
+        "errors": [],
     }
-    
+
     try:
+
         result = app.invoke(initial_state)
-        decision = result.get('decision', {})
-        print("  Decision: {}".format(decision.get('decision', 'N/A')))
-        print("  Risk Score: {}".format(decision.get('risk_score', 'N/A')))
-        print("  Confidence: {}".format(decision.get('confidence', 'N/A')))
-        print("  Human Review: {}".format(result.get('human_review_required', 'N/A')))
-        print("  Errors: {}".format(len(result.get('errors', []))))
-        for err in result.get('errors', []):
-            msg = str(err.get('message', ''))[:80]
-            print("    - {}: {}".format(err.get('stage', ''), msg))
-        print("  Credit Keys: {}".format(list(result.get('credit_analysis', {}).keys())))
-        print("  Property Keys: {}".format(list(result.get('property_analysis', {}).keys())))
-        print("  Compliance Keys: {}".format(list(result.get('compliance_analysis', {}).keys())))
+
+        decision = result.get("decision", {})
+
+        print(
+            "  Decision: {}".format(
+                decision.get("decision", "N/A")
+            )
+        )
+
+        print(
+            "  Risk Score: {}".format(
+                decision.get("risk_score", "N/A")
+            )
+        )
+
+        print(
+            "  Confidence: {}".format(
+                decision.get("confidence", "N/A")
+            )
+        )
+
+        print(
+            "  Human Review: {}".format(
+                result.get("human_review_required", "N/A")
+            )
+        )
+
+        print(
+            "  Errors: {}".format(
+                len(result.get("errors", []))
+            )
+        )
+
+        for err in result.get("errors", []):
+
+            msg = str(
+                err.get("message", "")
+            )[:80]
+
+            print(
+                "    - {}: {}".format(
+                    err.get("stage", ""),
+                    msg,
+                )
+            )
+
+        # Property valuation output
+        property_analysis = result.get(
+            "property_analysis",
+            {}
+        )
+
+        print(
+            "  Property Estimated Value: {}".format(
+                property_analysis.get(
+                    "estimated_value",
+                    "N/A",
+                )
+            )
+        )
+
+        print(
+            "  Property Price/Sqft: {}".format(
+                property_analysis.get(
+                    "price_per_sqft",
+                    "N/A",
+                )
+            )
+        )
+
+        print(
+            "  Property Flags: {}".format(
+                property_analysis.get(
+                    "flags",
+                    [],
+                )
+            )
+        )
+
+        print(
+            "  Property Keys: {}".format(
+                list(property_analysis.keys())
+            )
+        )
+
+        print(
+            "  Credit Keys: {}".format(
+                list(
+                    result.get(
+                        "credit_analysis",
+                        {}
+                    ).keys()
+                )
+            )
+        )
+
+        print(
+            "  Compliance Keys: {}".format(
+                list(
+                    result.get(
+                        "compliance_analysis",
+                        {}
+                    ).keys()
+                )
+            )
+        )
+
     except Exception as e:
-        print("  ERROR: {}".format(e))
+
+        print(
+            "  ERROR: {}".format(e)
+        )
+
 
 print("\n=== SMOKE TEST COMPLETED ===")

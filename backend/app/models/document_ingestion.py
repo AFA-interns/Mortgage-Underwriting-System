@@ -136,20 +136,49 @@ class BankStatementData(BaseModel):
 
 
 class PropertyDocData(BaseModel):
-    document_title: Optional[str] = Field(default=None, description="Sale Deed, Allotment Letter, Possession Certificate")
+
+    document_title: Optional[str] = Field(
+        default=None,
+        description="Sale Deed, Allotment Letter, Possession Certificate"
+    )
+
     property_address: Optional[str] = Field(default=None)
+
+    locality: Optional[str] = Field(
+        default=None,
+        description="Locality, neighborhood, or area where the property is located"
+    )
+
     city: Optional[str] = Field(default=None)
+
     state: Optional[str] = Field(default=None)
+
     pincode: Optional[str] = Field(default=None)
-    property_type: Optional[str] = Field(default="Residential Flat", description="Residential Flat, Independent House, Villa, Plot")
+
+    property_type: Optional[str] = Field(
+        default="Residential Flat",
+        description="Residential Flat, Independent House, Villa, Plot"
+    )
+
     seller_or_builder_name: Optional[str] = Field(default=None)
+
     buyer_or_owner_name: Optional[str] = Field(default=None)
+
     super_builtup_area_sqft: Optional[float] = Field(default=None)
+
     carpet_area_sqft: Optional[float] = Field(default=None)
+
     plot_or_flat_number: Optional[str] = Field(default=None)
-    purchase_or_market_value: Optional[float] = Field(default=None, description="Transaction consideration amount in INR")
+
+    purchase_or_market_value: Optional[float] = Field(
+        default=None,
+        description="Transaction consideration amount in INR"
+    )
+
     registration_number: Optional[str] = Field(default=None)
+
     registration_date: Optional[str] = None
+
     provenance: Dict[str, FieldProvenance] = Field(default_factory=dict)
 
 

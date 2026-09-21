@@ -1,18 +1,29 @@
-import httpx
+from __future__ import annotations
+
 from typing import Any
 
+import httpx
 
-AVNESTER_URL = "https://api.avnester.com/public/v1/search_properties"
+
+AVNESTER_URL = (
+    "https://api.avnester.com/public/v1/search_properties"
+)
 
 
-async def search_properties(filters: dict[str, Any]) -> dict[str, Any]:
-    """Call AVnester property search API."""
+def search_properties(
+    filters: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Search property listings using the AVnester public API.
+    """
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
+    with httpx.Client(timeout=30.0) as client:
+
+        response = client.post(
             AVNESTER_URL,
             json=filters,
         )
 
         response.raise_for_status()
+
         return response.json()
