@@ -25,7 +25,7 @@ coverage.xml
 *.cover
 .hypothesis/
 
-# Local configuration / secrets — NEVER commit these
+# Environment variables & Local configuration / secrets — NEVER commit these
 .env
 .env.local
 .env.production
@@ -49,3 +49,15 @@ Desktop.ini
 logs/
 .omo/
 backend/mock_documents/
+
+# Node / Next.js / Frontend
+node_modules
+.next/
+
+# v0 sandbox internal files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/
