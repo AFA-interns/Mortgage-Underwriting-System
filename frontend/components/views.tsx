@@ -6,7 +6,7 @@ import {
   Loader2, Plus, ShieldCheck, Sparkles, UploadCloud, X, Zap,
 } from 'lucide-react'
 import {
-  formatInr, formatPct, underwritingService,
+  documentUrl, formatInr, formatPct, formatSize, underwritingService,
   type ApplicationView, type DemoScenario, type ReviewItem, type Stage,
 } from '@/lib/underwriting-service'
 import { getDashboardMetrics } from '@/lib/dashboard-service'
@@ -28,6 +28,25 @@ const NoApplication = ({ setView, title = 'No application yet' }: { setView: (v:
     </div>
   </div>
 )
+
+/* -------------------------------------------------------------- documents */
+
+function DocumentLinks({ app }: { app: ApplicationView }) {
+  if (!app.document_files?.length) return <span className="muted">No stored documents.</span>
+  return (
+    <ul className="doc-links">
+      {app.document_files.map((d) => (
+        <li key={d.id}>
+          <a href={documentUrl(app.id, d.id)} target="_blank" rel="noreferrer" data-testid="doc-link">
+            <FileText size={14} />
+            <span>{d.filename.replace(/^\d{2}_/, '')}</span>
+            <small>{d.type.replace(/_/g, ' ')} · {formatSize(d.size_bytes)}</small>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 /* ---------------------------------------------------------------- tables */
 
@@ -261,6 +280,11 @@ export function Detail({ app, setView }: { app: ApplicationView | null; setView:
         <p>{d.rationale}</p>
       </div>
 
+      <section className="panel doc-panel" data-testid="doc-panel">
+        <div><h3>Submitted documents</h3><p className="muted">Stored source PDFs, open them to verify the extracted data.</p></div>
+        <DocumentLinks app={app} />
+      </section>
+
       <div className="detail-metrics">
         <div><span>Loan amount</span><strong>{formatInr(app.loan.amount)}</strong></div>
         <div><span>Loan-to-value</span><strong>{formatPct(credit.ltv)}</strong></div>
@@ -445,7 +469,7 @@ export function AgentReports({ app, setView }: { app: ApplicationView | null; se
 
 /* ---------------------------------------------------------- human review */
 
-export function HumanReview({ setView, open, onChanged }: { setView: (v: View) => void; open: (id: string) => void; onChanged: () => void }) {
+export function HumanReview({ apps, setView, open, onChanged }: { apps: ApplicationView[]; setView: (v: View) => void; open: (id: string) => void; onChanged: () => void }) {
   const [items, setItems] = useState<ReviewItem[] | null>(null)
   useEffect(() => { underwritingService.listReviewItems().then(setItems).catch(() => setItems([])) }, [])
   if (items === null) return <div className="page-content"><div className="panel loading-state">Loading review queue…</div></div>
@@ -473,6 +497,7 @@ export function HumanReview({ setView, open, onChanged }: { setView: (v: View) =
                 <StatusPill tone={item.status === 'Resolved' ? 'green' : item.severity === 'High' ? 'amber' : 'blue'}>{item.status}</StatusPill>
               </div>
               <p>{item.evidence}</p>
+              {apps.find((a) => a.id === item.application_id) && <div className="review-docs"><span>Documents to check</span><DocumentLinks app={apps.find((a) => a.id === item.application_id)!} /></div>}
               <div className="review-meta"><span>Owner <strong>{item.owner}</strong></span><span>Severity <strong>{item.severity}</strong></span></div>
               {item.status !== 'Resolved'
                 ? <button className="secondary-button" onClick={() => resolve(item.id)}><Check size={15} /> Mark resolved</button>

@@ -77,7 +77,7 @@ export default function UnderwritingApp() {
         {view === 'new' && <NewApplication setView={setView} onDone={(a) => { setApps((prev) => [a, ...prev]); open(a.id) }} />}
         {view === 'detail' && <Detail app={current} setView={setView} />}
         {view === 'reports' && <AgentReports app={current} setView={setView} />}
-        {view === 'review' && <HumanReview setView={setView} open={open} onChanged={refresh} />}
+        {view === 'review' && <HumanReview apps={apps} setView={setView} open={open} onChanged={refresh} />}
         {view === 'final-report' && <FinalReportView app={current} setView={setView} />}
       </main>
     </div>

@@ -77,3 +77,14 @@ button { cursor: pointer; }
 .kv-list b { color: #38516d; font-weight: 600; text-align: right; }
 .report-detail h4 { margin: 18px 0 10px; color: #3a5674; font-size: 12px; }
 .report-detail table { min-width: 0; }
+
+/* --- stored documents --- */
+.doc-panel { padding: 18px 21px; margin-bottom: 18px; display: flex; gap: 24px; align-items: flex-start; }
+.doc-panel h3 { margin: 0 0 5px; font-size: 15px; color: #193a5f; }
+.doc-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; flex: 1; justify-content: flex-end; }
+.doc-links a { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 7px; background: #fbfcfe; color: #2a6ba8; font-size: 12px; text-decoration: none; }
+.doc-links a:hover { border-color: #398bd4; background: #fff; }
+.doc-links small { color: #8b9cac; font-size: 10px; }
+.review-docs { margin: 12px 0; }
+.review-docs > span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: #8a9aab; margin-bottom: 8px; }
+.review-docs .doc-links { justify-content: flex-start; }

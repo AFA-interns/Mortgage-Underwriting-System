@@ -1,9 +1,13 @@
 """Synthetic test data for the Decision Agent."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import pytest
+
+# Tests use the in-memory store; never touch a developer's PostgreSQL.
+os.environ["DATABASE_URL"] = ""
 
 from tests.mock_data.generate_docs import generate_all_mock_scenarios
 

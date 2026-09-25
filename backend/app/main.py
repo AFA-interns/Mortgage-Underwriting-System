@@ -8,7 +8,7 @@ from typing import Any, List, Optional, Dict
 
 from app.services.avnester import search_properties
 
-from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -50,7 +50,9 @@ class UnderwritingRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    from app.services.applications import store as _store
+
+    return {"status": "ok", "storage": _store.kind, "storage_detail": _store.description}
 
 
 # -------------------------------------------------------
@@ -58,6 +60,8 @@ async def health() -> dict[str, str]:
 # -------------------------------------------------------
 
 from app.services.applications import DEMO_SCENARIOS, run_application, store  # noqa: E402
+
+MAX_UPLOAD_BYTES = 20_000_000
 
 
 @app.get("/api/v1/demo-scenarios")
@@ -115,6 +119,8 @@ def run_full_pipeline(
             dest = os.path.join(tmp_dir, f"{i:02d}_{os.path.basename(upload.filename)}")
             with open(dest, "wb") as out:
                 shutil.copyfileobj(upload.file, out)
+            if os.path.getsize(dest) > MAX_UPLOAD_BYTES:
+                raise HTTPException(413, f"'{upload.filename}' is larger than {MAX_UPLOAD_BYTES // 1_000_000} MB.")
             paths.append(dest)
 
         profile = {
@@ -147,6 +153,21 @@ def get_application(application_id: str) -> dict[str, Any]:
     if view is None:
         raise HTTPException(404, f"Application '{application_id}' not found.")
     return view
+
+
+@app.get("/api/v1/applications/{application_id}/documents/{doc_id}")
+def get_application_document(application_id: str, doc_id: str) -> Response:
+    """Serves a stored source PDF inline so reviewers can open it in the browser."""
+    found = store.get_document(application_id, doc_id)
+    if found is None:
+        raise HTTPException(404, "Document not found.")
+    filename, content = found
+    safe = filename.encode("ascii", "ignore").decode() or "document.pdf"
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{safe}"'},
+    )
 
 
 @app.get("/api/v1/review-items")

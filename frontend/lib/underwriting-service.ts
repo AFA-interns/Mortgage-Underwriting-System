@@ -12,6 +12,8 @@ export type Stage = {
   highlights: string[]
 }
 
+export type DocumentFile = { id: string; filename: string; type: string; size_bytes: number }
+
 export type ReviewItem = {
   id: string
   application_id: string
@@ -31,6 +33,7 @@ export type ApplicationView = {
   processing_seconds: number
   source: string
   documents: string[]
+  document_files: DocumentFile[]
   status: ApplicationStatus
   decision: Record<string, any>
   loan: {
@@ -88,6 +91,12 @@ export const underwritingService = {
   resolveReview: (id: string) =>
     request<ReviewItem>(`/api/v1/review-items/${encodeURIComponent(id)}/resolve`, { method: 'POST' }),
 }
+
+export const documentUrl = (applicationId: string, docId: string): string =>
+  `/api/v1/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(docId)}`
+
+export const formatSize = (bytes: number): string =>
+  bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`
 
 export const formatInr = (value: unknown): string => {
   if (typeof value !== 'number' || !isFinite(value) || value <= 0) return '—'

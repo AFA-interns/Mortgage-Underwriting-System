@@ -199,6 +199,12 @@ Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup).
 
 ---
 
+## 🗄️ Database (PostgreSQL)
+
+Set `DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/mortgage_uw` in `backend/.env`. On startup the backend creates the database (if missing) and these tables: `applications` (full result as JSONB), `review_items`, and `documents` (the uploaded PDFs, so a human reviewer can open them from the UI). `GET /health` reports `"storage": "postgres"` or `"memory"`. With `DATABASE_URL` empty, or if Postgres is unreachable, the app falls back to in-memory storage and logs an error. Tests always use memory; run the Postgres round-trip test with `TEST_DATABASE_URL` pointing at a throwaway database.
+
+---
+
 ## 🚀 Quick Start
 
 ```bash
@@ -228,7 +234,7 @@ cd backend  && .env\Scripts\python.exe -m uvicorn app.main:app --port 8000
 cd frontend && npx pnpm@10 dev          # http://localhost:3000
 ```
 
-In the UI, **New application** accepts real PDFs (or one of four demo scenarios) and runs the whole pipeline: ingestion → credit + property + compliance → decision. Results appear on the dashboard, the application's workflow page, per-agent reports, the human-review queue and the final report. Applications are kept in memory (they reset when the backend restarts).
+In the UI, **New application** accepts real PDFs (or one of four demo scenarios) and runs the whole pipeline: ingestion → credit + property + compliance → decision. Results appear on the dashboard, the application's workflow page, per-agent reports, the human-review queue and the final report. Applications, review items and the uploaded PDFs are stored in PostgreSQL (see below).
 
 ## 📡 API Endpoints
 
@@ -236,6 +242,7 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 |--------|----------|-------------|
 | POST | `/api/v1/underwriting/run` | **Full pipeline from uploaded PDFs** (multipart) or `demo_scenario` |
 | GET | `/api/v1/applications`, `/api/v1/applications/{id}` | Stored results (agents, report, review items) |
+| GET | `/api/v1/applications/{id}/documents/{doc_id}` | Stored source PDF (inline) |
 | GET/POST | `/api/v1/review-items`, `/api/v1/review-items/{id}/resolve` | Human-review queue |
 | GET | `/api/v1/demo-scenarios` | Bundled demo borrowers |
 | POST | `/underwriting/{application_id}/run` | Execute full pipeline (server-side file paths) |
