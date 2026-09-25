@@ -87,8 +87,9 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 **Input:** Property data from `doc_ingestion_output.property_profile`  
 **Output:** `property_analysis` (dict)
 
-**Pipeline:** Geocode → Local Comparables DB → Mock External API → Reconcile → Explain  
-**Sources:** Nominatim geocoder, local `data/dummy_properties.csv`, mock AVM API
+**Pipeline:** Geocode → AVnester live listings → Median ₹/sqft × area → Confidence → Explain  
+**Sources:** Nominatim geocoder and the live [AVnester](https://www.avnester.com) public API (no key needed). There is no local/dummy data.  
+**Behaviour:** searches the subject's locality first and widens to the whole city when fewer than 3 usable comparables exist (confidence −0.10). Supports `apartment`, `villa`, `independent_house` and `plot`. **AVnester only covers Tamil Nadu**, and its for-sale inventory is currently mostly plots, so anything else (or an AVnester outage) yields valuation 0 / confidence 0 and a SUSPEND for human review.
 
 ---
 
@@ -145,7 +146,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Geocoding | geopy (Nominatim) |
 | Data | pandas (comparables CSV), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (146 tests) |
+| Testing | pytest (149 tests) |
 | **No external LLMs** — Fully deterministic, zero API keys required |
 
 ---
@@ -177,14 +178,13 @@ mortgage-underwriting-system/
 │   │   │   ├── decision.py, document_ingestion.py, document_ingestion_state.py
 │   │   │   └── property_valuation.py
 │   │   ├── tools/                      # Shared utilities
-│   │   │   ├── comparables_db.py, external_api.py, geocoder.py
+│   │   │   ├── external_api.py (AVnester valuation), geocoder.py
 │   │   ├── services/credit_bureau.py   # Stub (replace with real API)
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
 │   ├── config/                         # risk_, credit_, compliance_config.yaml
-│   ├── tests/                          # 146 tests (unit + e2e)
+│   ├── tests/                          # 149 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
-│   ├── data/dummy_properties.csv       # Property comparables
 │   ├── pyproject.toml
 │   └── README.md
 ├── frontend/                           # Next.js UI (app/, components/, lib/, public/)
@@ -206,7 +206,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 146 tests pass
+pytest tests/ -v           # 149 tests pass
 python smoke_test_pipeline.py  # Full pipeline with mock PDFs
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -214,9 +214,10 @@ uvicorn app.main:app --reload  # Start API server
 **Frontend:**
 ```bash
 cd frontend
-pnpm install
-pnpm dev                       # talks to the FastAPI backend
+pnpm install                   # or: npx pnpm@10 install
+pnpm dev                       # http://localhost:3000, proxies /api/v1/* to 127.0.0.1:8000
 ```
+Start the backend first (`uvicorn app.main:app --port 8000`).
 
 ---
 
@@ -257,7 +258,8 @@ pnpm dev                       # talks to the FastAPI backend
 | Decision (Finalizer, Risk Engine, Contradictions, Comparator, Confidence) | 19 | 100% |
 | E2E Pipeline (APPROVE, DENY, SUSPEND, Compliance Gate) | 8 | 100% |
 | Compliance (6 rule modules, scoring, crew, node) | 43 | 100% |
-| **Total** | **146** | **100%** |
+| Pipeline regressions (graph, AVnester valuation, compliance mapping, scenario 1 APPROVE) | 10 | 100% |
+| **Total** | **149** | **100%** |
 
 ---
 
@@ -269,7 +271,7 @@ pnpm dev                       # talks to the FastAPI backend
 4. **Transformation Node** — Bridges `doc_ingestion_output` → `document_analysis` format
 5. **Hard Safety Gates** — Decision finalizer overrides any crew recommendation
 6. **Evidence Provenance** — Every field traces back to source agent/document
-6. **Test Fixtures** — 4 realistic Indian mortgage scenarios (clean, name discrepancy, salary discrepancy, missing docs)
+6. **Test Fixtures** — 4 realistic Indian mortgage scenarios (clean prime: Coimbatore residential plot priced live from AVnester; name discrepancy; salary discrepancy; missing docs)
 
 ---
 

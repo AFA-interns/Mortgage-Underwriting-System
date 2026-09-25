@@ -2,7 +2,6 @@ import os
 from langchain_core.messages import HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.tools.geocoder import geocode_address
-from app.tools.comparables_db import get_comparables
 from app.tools.external_api import fetch_api_valuation
 from app.graph.property_state import AgentState
 
@@ -21,18 +20,6 @@ def location_node(state: AgentState) -> AgentState:
     return {"location": loc_data}
 
 
-def comps_node(state: AgentState) -> AgentState:
-    prop = state.get("property", {})
-    comps = get_comparables(
-        locality=prop.get("locality", ""),
-        city=prop.get("city", ""),
-        property_type=prop.get("property_type", ""),
-        bhk=prop.get("bhk", 1),
-        area_sqft=prop.get("area_sqft", 1000)
-    )
-    return {"candidate_comps": comps}
-
-
 def api_valuation_node(state: AgentState) -> AgentState:
     prop = state.get("property", {})
     api_val = fetch_api_valuation(
@@ -42,7 +29,7 @@ def api_valuation_node(state: AgentState) -> AgentState:
         bhk=prop.get("bhk", 1),
         area_sqft=prop.get("area_sqft", 1000)
     )
-    return {"api_valuation": api_val}
+    return {"api_valuation": api_val, "candidate_comps": api_val.get("comparables", [])}
 
 
 def reconcile_node(state: AgentState) -> AgentState:
@@ -51,23 +38,12 @@ def reconcile_node(state: AgentState) -> AgentState:
 
     risk_flags = []
 
-    comp_value = 0
-    if comps:
-        comp_value = sum(c['price_inr'] for c in comps) / len(comps)
-    else:
-        risk_flags.append("No comparable sales found in local database.")
+    if not comps:
+        risk_flags.append("No comparable AVnester listings found.")
 
     api_est = api_val.get("estimated_market_value_inr", 0)
 
-    difference = 0
-    if comp_value > 0 and api_est > 0:
-        difference = abs(comp_value - api_est) / api_est
-    elif comp_value == 0:
-        difference = 1.0
-
-    confidence_score = 0.9 - (difference * 1.5)
-    if confidence_score < 0:
-        confidence_score = 0
+    confidence_score = api_val.get("api_confidence_score", 0) if api_est > 0 else 0
 
     human_review = False
     conf_label = "HIGH"
@@ -75,7 +51,7 @@ def reconcile_node(state: AgentState) -> AgentState:
     if confidence_score < 0.6 or len(comps) < 2:
         human_review = True
         conf_label = "LOW"
-        risk_flags.append("High variance between Comps and Market API, or insufficient data.")
+        risk_flags.append("Low confidence or insufficient comparable listings.")
     elif confidence_score < 0.8:
         conf_label = "MEDIUM"
 

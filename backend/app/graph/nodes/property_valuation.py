@@ -8,7 +8,6 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.graph.state import UnderwritingState
 from app.tools.geocoder import geocode_address
-from app.tools.comparables_db import get_comparables
 from app.tools.external_api import fetch_api_valuation
 
 
@@ -113,28 +112,7 @@ def property_valuation_node(
     )
 
     # ---------------------------------------------------------
-    # LOCAL COMPARABLE PROPERTIES
-    # ---------------------------------------------------------
-
-    comparables = get_comparables(
-        locality=locality,
-        city=city,
-        property_type=property_type,
-        bhk=bhk,
-        area_sqft=area_sqft,
-    )
-
-    print("\n[PROPERTY VALUATION DEBUG]")
-    print("locality:", locality)
-    print("city:", city)
-    print("property_type:", property_type)
-    print("bhk:", bhk)
-    print("area_sqft:", area_sqft)
-    print("comparables_count:", len(comparables))
-    print("comparables:", comparables)
-
-    # ---------------------------------------------------------
-    # AVNESTER API
+    # AVNESTER LIVE LISTINGS (comparables + estimate)
     # ---------------------------------------------------------
 
     api_val = fetch_api_valuation(
@@ -145,206 +123,46 @@ def property_valuation_node(
         area_sqft=area_sqft,
     )
 
-    # ---------------------------------------------------------
-    # LOCAL COMPARABLE VALUATION
-    # ---------------------------------------------------------
-
+    comparables = api_val.get("comparables", [])
+    api_est = api_val.get("estimated_market_value_inr", 0)
+    scope = api_val.get("scope")
     risk_flags: list[str] = []
 
-    comp_value = 0
-
-    if comparables:
-
-        comp_value = (
-            sum(
-                c["price_inr"]
-                for c in comparables
-            )
-            / len(comparables)
-        )
-
-    else:
-
-        risk_flags.append(
-            "No comparable sales found "
-            "in local database."
-        )
-
-    print("\n[VALUATION CALCULATION DEBUG]")
-    print(
-        "comparable_prices:",
-        [c["price_inr"] for c in comparables]
-    )
-    print("comp_value:", comp_value)
-
-    # ---------------------------------------------------------
-    # AVNESTER ESTIMATED VALUE
-    # ---------------------------------------------------------
-
-    api_est = api_val.get(
-        "estimated_market_value_inr",
-        0,
-    )
-
-    # ---------------------------------------------------------
-    # CHOOSE FINAL VALUATION
-    # ---------------------------------------------------------
-
     if api_est > 0:
-
-        # AVnester has live market data.
         estimated_value = api_est
-
-        method = [
-            "comparable_sales",
-            "avnester",
-        ]
-
-        market_range_low = (
-            api_val
-            .get("valuation_range_inr", {})
-            .get("low", 0)
-        )
-
-        market_range_high = (
-            api_val
-            .get("valuation_range_inr", {})
-            .get("high", 0)
-        )
-
-        price_per_sqft = api_val.get(
-            "price_per_sqft_inr",
-            0,
-        )
-
-    else:
-
-        # AVnester returned no matching listings.
-        # Use local comparable properties as fallback.
-
-        estimated_value = comp_value
-
-        method = [
-            "comparable_sales",
-        ]
-
-        if comp_value > 0:
-
-            market_range_low = (
-                comp_value * 0.90
-            )
-
-            market_range_high = (
-                comp_value * 1.10
-            )
-
-            price_per_sqft = (
-                comp_value / area_sqft
-                if area_sqft > 0
-                else 0
-            )
-
+        method = ["comparable_sales", "avnester"]
+        market_range_low = api_val["valuation_range_inr"]["low"]
+        market_range_high = api_val["valuation_range_inr"]["high"]
+        price_per_sqft = api_val.get("price_per_sqft_inr", 0)
+        confidence_score = api_val.get("api_confidence_score", 0)
+        if scope == "city":
             risk_flags.append(
-                "AVnester returned no matching "
-                "listings; local comparable "
-                "valuation used."
+                "Fewer than 3 comparables in the subject locality; "
+                "city-wide AVnester listings used."
             )
-
-        else:
-
-            market_range_low = 0
-            market_range_high = 0
-            price_per_sqft = 0
-
-            risk_flags.append(
-                "No valuation data available from "
-                "AVnester or local comparable database."
-            )
-
-    # ---------------------------------------------------------
-    # COMPARE API AND LOCAL DATABASE
-    # ---------------------------------------------------------
-
-    if comp_value > 0 and api_est > 0:
-
-        difference = (
-            abs(comp_value - api_est)
-            / api_est
+        if len(comparables) < 2:
+            risk_flags.append("Insufficient comparable properties available.")
+        explanation = (
+            f"Property valuation estimated at Rs {estimated_value:,.0f} "
+            f"(median Rs {price_per_sqft:,.0f}/sqft x {area_sqft:,.0f} sqft) "
+            f"from {len(comparables)} live AVnester listings "
+            f"({scope}-level)."
         )
-
     else:
-
-        difference = 0
-
-    # ---------------------------------------------------------
-    # CONFIDENCE SCORE
-    # ---------------------------------------------------------
-
-    if api_est > 0 and comp_value > 0:
-
-        confidence_score = (
-            0.9 - (difference * 1.5)
-        )
-
-    elif api_est > 0:
-
-        confidence_score = 0.70
-
-    elif comp_value > 0:
-
-        confidence_score = 0.65
-
-    else:
-
+        estimated_value = 0
+        method = ["avnester"]
+        market_range_low = market_range_high = price_per_sqft = 0
         confidence_score = 0.0
-
-    confidence_score = max(
-        0,
-        min(1, confidence_score),
-    )
-
-    # ---------------------------------------------------------
-    # ADDITIONAL RISK FLAGS
-    # ---------------------------------------------------------
-
-    if len(comparables) < 2:
-
         risk_flags.append(
-            "Insufficient comparable "
-            "properties available."
+            "No usable AVnester listings for this property type and location."
         )
-
-    # ---------------------------------------------------------
-    # EXPLANATION
-    # ---------------------------------------------------------
-
-    if api_est > 0:
-
         explanation = (
-            f"Property valuation estimated at "
-            f"₹{estimated_value:,.0f} using "
-            f"AVnester market data and "
-            f"{len(comparables)} local "
-            f"comparable properties."
+            "Property valuation could not be determined because AVnester "
+            "returned no comparable listings."
         )
 
-    elif comp_value > 0:
-
-        explanation = (
-            "AVnester returned no matching "
-            "live listings. Property valuation "
-            f"estimated at ₹{estimated_value:,.0f} "
-            f"using {len(comparables)} local "
-            "comparable properties."
-        )
-
-    else:
-
-        explanation = (
-            "Property valuation could not be "
-            "determined because no comparable "
-            "or external market data was available."
-        )
+    comp_value = api_est
+    difference = 0
 
     # ---------------------------------------------------------
     # OPTIONAL GEMINI EXPLANATION
@@ -422,6 +240,9 @@ Risk Flags:
             "rera_status":
                 "UNKNOWN",
 
+            "scope":
+                scope,
+
             "valuation_variance_percent":
                 round(
                     difference * 100,
@@ -439,18 +260,14 @@ Risk Flags:
                     "agent": "property",
                     "field": "estimated_value",
                     "value": estimated_value,
-                    "source": (
-                        "avnester"
-                        if api_est > 0
-                        else "local_db"
-                    ),
+                    "source": "avnester",
                 },
 
                 {
                     "agent": "property",
                     "field": "comparable_count",
                     "value": len(comparables),
-                    "source": "local_db",
+                    "source": "avnester",
                 },
 
             ],
@@ -467,7 +284,6 @@ Risk Flags:
             "sources": [
                 "Nominatim Geocoder",
                 "AVnester",
-                "Local Comparable Database",
             ],
         },
 

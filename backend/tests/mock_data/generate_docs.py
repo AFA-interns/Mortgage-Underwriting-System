@@ -374,16 +374,16 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         deed_p,
         [{
             "title": "GOVERNMENT OF TAMIL NADU - DEPARTMENT OF STAMPS & REGISTRATION",
-            "subtitle": "Deed of Absolute Sale for Residential Apartment",
+            "subtitle": "Deed of Absolute Sale for Residential Plot",
             "sections": [
                 {
                     "heading": "Parties to the Agreement",
                     "items": [
                         ("Document Title", "Sale Deed"),
                         ("Registration Number", "CBE-SAR-4458/2026"),
-                        ("Vendor / Developer", "Green Valley Estates Pvt Ltd"),
+                        ("Vendor / Developer", "Lakshmi Layouts Pvt Ltd"),
                         ("Purchaser / Buyer", "Aarav Sharma"),
-                        ("Property Type", "Apartment")
+                        ("Property Type", "Residential Plot")
                     ]
                 },
                 {
@@ -391,17 +391,16 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
                     "items": [
                         (
                             "Property Address",
-                            "Unit 604, Green Valley Apartments, "
-                            "Saravanampatti, Coimbatore, Tamil Nadu, PIN: 641035"
+                            "Plot 27, Lakshmi Nagar Layout, "
+                            "Thondamuthur, Coimbatore, Tamil Nadu, PIN: 641109"
                         ),
-                        ("Super Built-up Area", "1,450.00 Sq. Ft."),
-                        ("Carpet Area", "1,120.00 Sq. Ft."),
+                        ("Plot Area", "2,400.00 Sq. Ft."),
                         ("Consideration Amount", "INR 75,00,000.00"),
                         ("Stamp Duty Paid", "INR 3,75,000.00")
                     ]
                 }
             ],
-            "footer": "Office of the Sub-Registrar, Saravanampatti, Coimbatore | Registered & Sealed"
+            "footer": "Office of the Sub-Registrar, Thondamuthur, Coimbatore | Registered & Sealed"
         }]
     )
 

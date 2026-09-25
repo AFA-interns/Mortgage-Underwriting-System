@@ -852,7 +852,7 @@ class DocumentExtractors:
         prop_address = None
 
         address_match = re.search(
-            r"Property Address:\s*\n?\s*(.*?)(?=\n(?:Super Built-up Area|Carpet Area|Consideration Amount|Stamp Duty Paid):)",
+            r"Property Address:\s*\n?\s*(.*?)(?=\n(?:Super Built-up Area|Carpet Area|Plot Area|Consideration Amount|Stamp Duty Paid):)",
             text,
             re.IGNORECASE | re.DOTALL,
         )
@@ -874,6 +874,18 @@ class DocumentExtractors:
 
         carpet_match = re.search(r"(?:Carpet\s*Area)\s*[:\-]?\s*\n?\s*([\d,]+\.?\d*)\s*(?:Sq\.?\s*Ft\.?|Square\s*Feet|sqft)", text, re.I)
         carpet_area = float(carpet_match.group(1).replace(",", "")) if carpet_match else None
+
+        # Plots have no built-up area: their "Plot Area" is the carpet-area
+        # equivalent used for valuation.
+        plot_match = re.search(r"(?:Plot|Land)\s*Area\s*[:\-]?\s*\n?\s*([\d,]+\.?\d*)\s*(?:Sq\.?\s*Ft\.?|Square\s*Feet|sqft)", text, re.I)
+        if plot_match and not carpet_area:
+            carpet_area = float(plot_match.group(1).replace(",", ""))
+
+        is_plot = bool(plot_match) or (
+            bool(re.search(r"Property\s*Type:\s*\n?\s*(?:Residential\s+)?(?:Plot|Land)\b", text, re.I))
+            and not sbu_match
+        )
+        property_type = "Residential Plot" if is_plot else "Residential Flat"
 
         if super_area:
             provenance["super_builtup_area_sqft"] = FieldProvenance(
@@ -967,7 +979,7 @@ class DocumentExtractors:
             city=city,
             pincode=pincode,
             locality=locality,
-            property_type="Residential Flat",
+            property_type=property_type,
             seller_or_builder_name=seller_name,
             buyer_or_owner_name=buyer_name,
             super_builtup_area_sqft=super_area,

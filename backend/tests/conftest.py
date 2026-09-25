@@ -3,6 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+from tests.mock_data.generate_docs import generate_all_mock_scenarios
+
 
 def get_good_case() -> dict[str, Any]:
     """A strong application — should APPROVE."""
@@ -233,3 +237,9 @@ def get_missing_inputs_case() -> dict[str, Any]:
         "property_analysis": {},
         "compliance_analysis": {},
     }
+
+
+@pytest.fixture(scope="session")
+def mock_docs():
+    """Generates and returns paths to all mock test document suites."""
+    return generate_all_mock_scenarios()

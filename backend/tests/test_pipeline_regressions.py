@@ -85,3 +85,65 @@ def test_full_graph_runs_parallel_agents_without_state_conflict():
         })
     for key in ("credit_analysis", "property_analysis", "compliance_analysis", "decision"):
         assert result.get(key), key
+
+
+# ---------------------------------------------------------------------------
+# AVnester valuation (no local dummy data)
+# ---------------------------------------------------------------------------
+
+def _listing(price, area, locality="X"):
+    return {"listingId": f"id-{price}", "title": "t", "locality": locality,
+            "price": price, "carpetAreaSqft": area, "pricePerSqft": price // area}
+
+
+def test_avnester_uses_carpet_area_median_and_plot_type():
+    seen = []
+
+    def fake(filters):
+        seen.append(filters)
+        return {"listings": [_listing(3_000_000, 1000), _listing(3_200_000, 1000),
+                             _listing(9_000_000, 1000), {"price": 5, "carpetAreaSqft": None}]}
+
+    with patch("app.tools.external_api.search_properties", side_effect=fake):
+        out = fetch_api_valuation("Thondamuthur", "Coimbatore", "Residential Plot", 0, 2400)
+
+    assert seen[0]["propertyType"] == "plot" and seen[0]["locality"] == "Thondamuthur"
+    assert out["scope"] == "locality"
+    assert out["price_per_sqft_inr"] == 3200  # median, robust to the 9000 outlier
+    assert out["estimated_market_value_inr"] == 3200 * 2400
+    assert len(out["comparables"]) == 3  # listing without area dropped
+
+
+def test_avnester_widens_to_city_when_locality_is_thin():
+    calls = []
+
+    def fake(filters):
+        calls.append(filters)
+        return {"listings": [_listing(3_000_000, 1000)]} if "locality" in filters else {
+            "listings": [_listing(p, 1000) for p in (2_000_000, 3_000_000, 4_000_000)]}
+
+    with patch("app.tools.external_api.search_properties", side_effect=fake):
+        out = fetch_api_valuation("Thin", "Coimbatore", "Plot", 0, 1000)
+
+    assert "locality" not in calls[-1]
+    assert out["scope"] == "city"
+    assert out["api_confidence_score"] == 0.7  # 0.5 + 0.3 - 0.1 city penalty
+
+
+def test_scenario_1_clean_prime_is_approved_on_avnester_data(mock_docs):
+    listings = [_listing(int(3125 * 1000), 1000) for _ in range(5)]
+    graph = build_underwriting_graph().compile()
+    with patch("app.tools.external_api.search_properties", return_value={"listings": listings}):
+        result = graph.invoke({
+            "application_id": "APP-CLEAN-001",
+            "raw_document_paths": mock_docs["clean_prime"],
+            "borrower_profile": {
+                "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
+                "loan_amount": 5_000_000, "loan_tenure_months": 240,
+                "property_value": 7_500_000, "existing_debt": 15000,
+            },
+            "errors": [],
+        })
+    assert result["property_analysis"]["estimated_value"] == 3125 * 2400
+    assert result["compliance_analysis"]["critical_flags"] == []
+    assert result["decision"]["decision"] == "APPROVE"

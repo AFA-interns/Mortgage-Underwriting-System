@@ -270,7 +270,13 @@ async def evaluate_property(intake: PropertyIntake):
 
     state = valuation_graph.get_state(config)
 
-    if "explanation" in state.next or (result.get("human_review_required") and state.next):
+    # The graph always pauses before "explanation"; only surface that pause
+    # to the underwriter when the valuation actually needs human review.
+    if state.next and not result.get("human_review_required"):
+        result = valuation_graph.invoke(None, config=config)
+        return _build_valuation_response(result)
+
+    if state.next:
         return {
             "status": "PENDING_HUMAN_REVIEW",
             "thread_id": thread_id,
@@ -315,8 +321,8 @@ def _build_valuation_response(state_dict) -> dict:
         "confidence_label": state_dict.get("confidence", {}).get("label", "UNKNOWN"),
         "risk_flags": state_dict.get("risk_flags", []),
         "human_review_required": state_dict.get("human_review_required", False),
-        "method": ["comparable_sales", "mock_external_api"],
-        "sources": ["Nominatim Geocoder", "Mock Zapkey AVM", "Local Dummy DB"],
+        "method": ["comparable_sales", "avnester"],
+        "sources": ["Nominatim Geocoder", "AVnester"],
         "explanation": state_dict.get("explanation", ""),
     }
 

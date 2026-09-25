@@ -88,14 +88,14 @@ function UploadCard({ label, required }: { label: string; required?: boolean }) 
 function NewApplication({ setView }: { setView: (v: View) => void }) { return <div className="page-content form-page"><div className="page-intro"><div><p className="section-kicker">Application intake</p><h2>Start a new application</h2><p className="muted">Add the borrower, loan and property details to begin AI underwriting.</p></div><button className="secondary-button" onClick={() => setView('dashboard')}><X size={16} /> Cancel</button></div><div className="form-layout"><div className="form-main"><section className="form-section"><div className="form-section-heading"><span className="section-number">01</span><div><h3>Borrower information</h3><p>Primary applicant details</p></div></div><div className="input-grid"><label>First name<input placeholder="First name" /></label><label>Last name<input placeholder="Last name" /></label><label>Email address<input type="email" placeholder="name@example.com" /></label><label>Phone number<input placeholder="(415) 555-0182" /></label></div></section><section className="form-section"><div className="form-section-heading"><span className="section-number">02</span><div><h3>Loan details</h3><p>Structure and purpose of the loan</p></div></div><div className="input-grid"><label>Loan amount<input placeholder="$0" /></label><label>Loan type<select defaultValue="Conventional"><option>Conventional</option><option>FHA</option><option>VA</option><option>Jumbo</option></select></label><label>Loan purpose<select defaultValue="Purchase"><option>Purchase</option><option>Refinance</option></select></label><label>Down payment<input placeholder="$137,000" /></label></div></section><section className="form-section"><div className="form-section-heading"><span className="section-number">03</span><div><h3>Property details</h3><p>Subject property information</p></div></div><div className="input-grid"><label className="span-2">Property address<input placeholder="Street address" /></label><label>City<input placeholder="San Francisco" /></label><label>State<select defaultValue="California"><option>California</option><option>Texas</option><option>New York</option></select></label><label>ZIP code<input placeholder="94102" /></label><label>Property type<select defaultValue="Single family"><option>Single family</option><option>Condominium</option><option>Multi-family</option></select></label></div></section><section className="form-section"><div className="form-section-heading"><span className="section-number">04</span><div><h3>Documents</h3><p>Upload source documents for analysis</p></div></div><div className="upload-grid"><UploadCard label="Government-issued ID" required /><UploadCard label="Income verification" required /><UploadCard label="Bank statements" required /><UploadCard label="Purchase agreement" /></div></section></div><aside className="form-summary"><div className="summary-card"><div className="summary-icon"><Sparkles size={20} /></div><h3>AI underwriting</h3><p>Prime Technique will analyze the application across credit, property, compliance and decision readiness.</p><div className="summary-list"><span><Check size={14} /> Document extraction</span><span><Check size={14} /> Risk assessment</span><span><Check size={14} /> Policy validation</span><span><Check size={14} /> Decision recommendation</span></div><button className="primary-button full" onClick={async () => {
   // Call the live Property Valuation Agent backend API!
   const payload = {
-    address: "100 Feet Road",
-    locality: "Indiranagar",
-    city: "Bangalore",
-    property_type: "Apartment",
-    bhk: 2,
-    area_sqft: 1200,
+    address: "Plot 27, Lakshmi Nagar Layout, Thondamuthur, Coimbatore",
+    locality: "Thondamuthur",
+    city: "Coimbatore",
+    property_type: "Residential Plot",
+    bhk: 0,
+    area_sqft: 2400,
     area_type: "carpet_area",
-    age_years: 5
+    age_years: 0
   };
   console.log("Triggering Property Valuation Agent...");
   const result = await underwritingService.triggerPropertyValuation(payload);

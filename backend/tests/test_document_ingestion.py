@@ -19,12 +19,6 @@ from app.document_ingestion.agent import DocumentIngestionAgent, document_ingest
 from tests.mock_data.generate_docs import generate_all_mock_scenarios
 
 
-@pytest.fixture(scope="session")
-def mock_docs():
-    """Generates and returns paths to all mock test document suites."""
-    return generate_all_mock_scenarios()
-
-
 # -----------------------------------------------------------------
 # 1. Validation Unit Tests
 # -----------------------------------------------------------------
@@ -141,7 +135,9 @@ def test_scenario_1_clean_prime(mock_docs):
     # 4. Property Profile
     assert output.property_profile is not None
     assert output.property_profile.purchase_or_market_value == 7500000.0
-    assert output.property_profile.super_builtup_area_sqft == 1450.0
+    assert output.property_profile.property_type == "Residential Plot"
+    assert output.property_profile.carpet_area_sqft == 2400.0
+    assert output.property_profile.locality == "Thondamuthur"
 
     # 5. Completeness & Confidence
     assert output.checklist.is_complete is True
