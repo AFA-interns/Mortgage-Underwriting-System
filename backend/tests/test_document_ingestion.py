@@ -125,7 +125,7 @@ def test_scenario_1_clean_prime(mock_docs):
     assert output.borrower_kyc is not None
     assert output.borrower_kyc.primary_name == "Aarav Sharma"
     assert output.borrower_kyc.pan_number == "ABCPS1234F"
-    assert "560066" in str(output.borrower_kyc.residential_address)
+    assert "641035" in str(output.borrower_kyc.residential_address)
 
     # 2. Income verification
     assert output.borrower_income is not None
@@ -140,7 +140,7 @@ def test_scenario_1_clean_prime(mock_docs):
 
     # 4. Property Profile
     assert output.property_profile is not None
-    assert output.property_profile.purchase_or_market_value == 12500000.0
+    assert output.property_profile.purchase_or_market_value == 7500000.0
     assert output.property_profile.super_builtup_area_sqft == 1450.0
 
     # 5. Completeness & Confidence

@@ -109,9 +109,9 @@ async def get_decision(application_id: str) -> dict[str, Any]:
     return latest.get("final_decision", {})
 
 @app.post("/property/search")
-async def property_search(filters: dict[str, Any]):
+def property_search(filters: dict[str, Any]):
     """Test endpoint for AVnester API connection."""
-    return await search_properties(filters)
+    return search_properties(filters)
 
 @app.get("/underwriting/{application_id}/report")
 async def get_report(application_id: str) -> dict[str, Any]:

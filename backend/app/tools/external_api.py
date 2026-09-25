@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.services.avnester import search_properties
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_api_valuation(
@@ -50,7 +53,11 @@ def fetch_api_valuation(
     # ---------------------------------------------------------
     # Call AVnester
     # ---------------------------------------------------------
-    response = search_properties(filters)
+    try:
+        response = search_properties(filters)
+    except Exception as exc:  # network error, timeout, non-2xx, bad JSON
+        logger.warning("AVnester call failed: %s", exc)
+        response = {}
 
     # ---------------------------------------------------------
     # Read response

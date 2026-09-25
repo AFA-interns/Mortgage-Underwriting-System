@@ -17,6 +17,8 @@ dependencies = [
     "pillow>=10.0.0",
     "geopy>=2.4.0",
     "pandas>=2.0.0",
+    "rapidfuzz>=3.0.0",
+    "python-dotenv>=1.0.0",
     "langchain-google-genai>=0.3.0",
 ]
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
 
 
-AVNESTER_URL = (
-    "https://api.avnester.com/public/v1/search_properties"
+AVNESTER_URL = os.getenv(
+    "AVNESTER_URL",
+    "https://api.avnester.com/public/v1/search_properties",
 )
 
 

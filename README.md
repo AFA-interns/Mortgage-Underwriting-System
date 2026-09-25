@@ -1,6 +1,6 @@
 # Mortgage Underwriting System
 
-**Agentic AI Mortgage Underwriting System — Backend**
+**Agentic AI Mortgage Underwriting System — Backend (`backend/`) + Next.js Frontend (`frontend/`)**
 
 A fully autonomous, deterministic mortgage underwriting pipeline built with LangGraph that chains four specialized agents in parallel: Document Ingestion → (Credit Analysis + Property Valuation + Compliance) → Decision Agent.
 
@@ -92,9 +92,22 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 
 ---
 
-### 4. Compliance Agent (`app/graph/nodes/compliance.py`)
-**Placeholder** — Returns PASS for KYC/CDD, PMLA, RBI Fair Practices  
-**TODO:** Teammate to implement KYC/CDD, PMLA source-of-funds, RERA, NHB, critical flag detection
+### 4. Compliance Agent (`app/compliance/`, `app/graph/nodes/compliance.py`)
+**Input:** `borrower_profile`, `document_analysis` (KYC / identity), `property_analysis` (RERA status, under-construction flag)
+**Output:** `compliance_analysis` (`ComplianceAnalysisResult`) — feeds Gate #1 of the Decision Agent
+
+**Design rule:** the LLM only explains, never decides. `rule_status` and `critical_flags` always come from the deterministic rules engine; the crew wrapper (`app/agents/compliance/crew.py`) has a template fallback and never raises.
+
+| Check | Module | Critical (blocks decision) | Non-critical |
+|-------|--------|----------------------------|--------------|
+| KYC completeness | `kyc_checks.py` | Missing/invalid required document | — |
+| Identity consistency | `identity_consistency.py` | PAN number mismatch | Name mismatch = warning; minor formatting passes; missing data is not a mismatch |
+| PMLA / AML | `pmla_aml.py` | Missing source-of-funds declaration | Missing identity log = warning |
+| RBI fair practices | `rbi_fair_practices.py` | Protected attribute used (case-insensitive, multiple detected) | — |
+| NHB priority sector | `nhb_priority_sector.py` | — | Above metro ceiling = not eligible (not critical); missing data does not classify |
+| RERA | `rera_check.py` | Under construction and not registered | N/A if not under construction; can be disabled via config |
+
+`rules_engine.py` runs all checks and applies config toggles; `flags.py` / `scoring.py` produce severity-graded flags and a confidence score (penalties, floor, cap). Thresholds, protected attributes and rule switches live in `config/compliance_config.yaml`.
 
 ---
 
@@ -130,8 +143,9 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | PDF Processing | PyMuPDF (fitz), pdfplumber |
 | NLP/Extraction | Regex + deterministic parsers |
 | Geocoding | geopy (Nominatim) |
-| Data | pandas (comparables CSV) |
-| Testing | pytest (98 tests) |
+| Data | pandas (comparables CSV), rapidfuzz (identity matching) |
+| Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
+| Testing | pytest (146 tests) |
 | **No external LLMs** — Fully deterministic, zero API keys required |
 
 ---
@@ -153,6 +167,7 @@ mortgage-underwriting-system/
 │   │   ├── document_ingestion/         # 7-step ingestion pipeline
 │   │   │   ├── agent.py, classifier.py, extractors.py, validators.py
 │   │   │   ├── reconciliation.py, confidence.py, preprocessor.py
+│   │   ├── compliance/                 # KYC, identity, PMLA, RBI, NHB, RERA rules + engine
 │   │   ├── graph/
 │   │   │   ├── nodes/                  # LangGraph nodes
 │   │   │   │   ├── credit.py, decision.py, property_valuation.py
@@ -166,13 +181,21 @@ mortgage-underwriting-system/
 │   │   ├── services/credit_bureau.py   # Stub (replace with real API)
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
-│   ├── tests/                          # 98 tests (unit + e2e)
+│   ├── config/                         # risk_, credit_, compliance_config.yaml
+│   ├── tests/                          # 146 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── data/dummy_properties.csv       # Property comparables
 │   ├── pyproject.toml
 │   └── README.md
+├── frontend/                           # Next.js UI (app/, components/, lib/, public/)
 └── .codegraph/PIPELINE.md              # This file
 ```
+
+---
+
+## ⚙️ Environment
+
+Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key, and every agent falls back to deterministic logic when `GOOGLE_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` are blank. Set them to enable LLM explanations. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review.
 
 ---
 
@@ -183,9 +206,16 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 98 tests pass
+pytest tests/ -v           # 146 tests pass
 python smoke_test_pipeline.py  # Full pipeline with mock PDFs
 uvicorn app.main:app --reload  # Start API server
+```
+
+**Frontend:**
+```bash
+cd frontend
+pnpm install
+pnpm dev                       # talks to the FastAPI backend
 ```
 
 ---
@@ -226,7 +256,8 @@ uvicorn app.main:app --reload  # Start API server
 | Document Ingestion (Validators, 4 Scenarios, LangGraph Node) | 16 | 100% |
 | Decision (Finalizer, Risk Engine, Contradictions, Comparator, Confidence) | 19 | 100% |
 | E2E Pipeline (APPROVE, DENY, SUSPEND, Compliance Gate) | 8 | 100% |
-| **Total** | **98** | **100%** |
+| Compliance (6 rule modules, scoring, crew, node) | 43 | 100% |
+| **Total** | **146** | **100%** |
 
 ---
 
@@ -244,7 +275,7 @@ uvicorn app.main:app --reload  # Start API server
 
 ## 📋 Configuration
 
-`backend/app/config/risk_config.yaml`:
+`backend/config/risk_config.yaml` (also `credit_config.yaml`, `compliance_config.yaml`):
 ```yaml
 decision:
   approve_min_score: 80
