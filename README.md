@@ -146,7 +146,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Geocoding | geopy (Nominatim) |
 | Data | pandas (comparables CSV), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (151 tests) |
+| Testing | pytest (156 tests) |
 | Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
@@ -183,7 +183,7 @@ mortgage-underwriting-system/
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
 │   ├── config/                         # risk_, credit_, compliance_config.yaml
-│   ├── tests/                          # 151 tests (unit + e2e)
+│   ├── tests/                          # 156 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -205,6 +205,22 @@ Set `DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/mortgage_uw` in `bac
 
 ---
 
+## 🧠 Do the agents need an LLM?
+
+**No.** Every decision and number comes from rules and data; an LLM only rephrases the explanation text.
+
+| Agent | How it works | LLM? |
+|-------|--------------|------|
+| Document Ingestion | Regex / rule-based extraction, validators and reconciliation | Never |
+| Credit | Rules for CIBIL band, FOIR, LTV, red flags, then a composite score; fixed explanation text | Never |
+| Property | Live AVnester listings → median ₹/sq ft × area; confidence from comparable count | Optional: only the 2-3 sentence explanation |
+| Compliance | Deterministic rules engine (KYC, identity, PMLA, RBI, NHB, RERA) | Optional: only the explanation |
+| Decision | 6-component weighted risk engine, contradiction checks, hard safety gates; rule-based crew and report | Never (must stay repeatable and auditable) |
+
+The optional LLM is a **local Ollama model** (no API key, nothing leaves your machine). CrewAI has been removed. Any explanation that mentions a verdict (approve / deny / reject / suspend / decline / recommend / eligible) is discarded, and any failure (Ollama off, timeout) falls back to the fixed template. With the LLM on, a run takes ~5-15 s instead of ~1 s. Set `LLM_PROVIDER=none` in `backend/.env` to turn it off.
+
+---
+
 ## 🚀 Quick Start
 
 ```bash
@@ -212,10 +228,19 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 151 tests pass
-python smoke_test_pipeline.py  # Full pipeline with mock PDFs
+pytest tests/ -v           # 156 tests pass
+python smoke_test_pipeline.py  # Full pipeline on the 4 mock-document scenarios (prints each result)
 uvicorn app.main:app --reload  # Start API server
 ```
+
+**Show the mock-document results**
+
+| How | Command / action | What you see |
+|-----|------------------|--------------|
+| Terminal (quickest) | `cd backend` then `.env\Scripts\python.exe smoke_test_pipeline.py` | Each scenario's documents, CIBIL/FOIR/LTV, live valuation, compliance flags, decision and rationale, ending in `SMOKE TEST PASSED` |
+| Browser | Start backend + frontend, open http://localhost:3000, **New application** → pick a demo scenario | The full workflow, agent reports, review queue and final report |
+
+Expected results: **clean → APPROVE** (risk 88), **name mismatch / salary mismatch / missing documents → SUSPEND** (human review). The mock PDFs are generated into `backend/mock_documents/` by `tests/mock_data/generate_docs.py`.
 
 **Frontend:**
 ```bash
@@ -279,7 +304,7 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 | E2E Pipeline (APPROVE, DENY, SUSPEND, Compliance Gate) | 8 | 100% |
 | Compliance (6 rule modules, scoring, crew, node) | 43 | 100% |
 | Pipeline regressions (graph, AVnester valuation, compliance mapping, scenario 1 APPROVE) | 10 | 100% |
-| **Total** | **151** | **100%** |
+| **Total** | **156** | **100%** |
 
 ---
 
