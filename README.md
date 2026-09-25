@@ -147,7 +147,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Data | pandas (comparables CSV), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
 | Testing | pytest (151 tests) |
-| **No external LLMs** — Fully deterministic, zero API keys required |
+| Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
 
@@ -195,7 +195,7 @@ mortgage-underwriting-system/
 
 ## ⚙️ Environment
 
-Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key, and every agent falls back to deterministic logic when `GOOGLE_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` are blank. Set them to enable LLM explanations. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review.
+Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key. **Local LLM:** with [Ollama](https://ollama.com) running (`ollama pull llama3.2`), `LLM_PROVIDER=ollama` makes the compliance and property agents write their explanations with it (a run then takes ~5-15 s instead of ~1 s). Set `LLM_PROVIDER=none` to always use the fixed templates. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review.
 
 ---
 
@@ -285,7 +285,7 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 
 ## 🔑 Key Design Decisions
 
-1. **Zero LLM Dependencies** — All decisions deterministic; LLM only for explanations with graceful fallback
+1. **Rule-based decisions, local-LLM explanations** — every decision is deterministic. The compliance and property agents optionally ask a local Ollama model to phrase their explanation; text that mentions a verdict is rejected, and any failure falls back to a fixed template
 2. **Parallel Execution** — Credit, Property, Compliance run simultaneously via LangGraph fan-out
 3. **Annotated State** — `errors` uses `Annotated[list, operator.add]` for concurrent writes
 4. **Transformation Node** — Bridges `doc_ingestion_output` → `document_analysis` format

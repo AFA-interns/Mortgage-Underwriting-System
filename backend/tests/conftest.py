@@ -8,6 +8,7 @@ import pytest
 
 # Tests use the in-memory store; never touch a developer's PostgreSQL.
 os.environ["DATABASE_URL"] = ""
+os.environ["LLM_PROVIDER"] = "none"  # fixed templates; no local LLM in tests
 
 from tests.mock_data.generate_docs import generate_all_mock_scenarios
 

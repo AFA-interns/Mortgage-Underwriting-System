@@ -1,28 +1,22 @@
-"""CrewAI Compliance Reviewer — explains already-final rule results, never
-overrides them. Mirrors app.agents.credit.crew's shape: single Agent,
-LLM used for explanation only, deterministic fallback on any failure.
+"""Compliance explanation: plain-language summary of the already-final rule
+results. The rules engine decides; this only phrases the result.
 
-ASSUMPTION FLAGGED: app.services.llm currently only exposes
-get_llm_config() (provider/model strings, no secrets) — it doesn't build a
-LangChain/CrewAI LLM object itself. This module assumes CrewAI's
-Agent(llm="<provider>/<model>") string form. If app.agents.credit.crew or
-app.agents.decision.crew build the LLM object differently (e.g. an
-explicit ChatGoogleGenerativeAI/ChatGroq instance, or a primary→fallback
-retry helper), copy that exact pattern here instead — this was written
-without sight of those two files.
+Uses the local LLM (app.services.llm, Ollama) when it is running, and the
+deterministic template otherwise, so the pipeline never blocks or needs an
+API key.
 """
 from __future__ import annotations
 
 from typing import Any
 
-from app.services.llm import get_llm_config, llm_available
+from app.services.llm import explain
 
-try:
-    from crewai import Agent, Crew, Process, Task
-
-    _CREWAI_AVAILABLE = True
-except ImportError:
-    _CREWAI_AVAILABLE = False
+_SYSTEM = (
+    "You are a compliance reviewer for Indian housing finance. Explain the "
+    "compliance rule results below in 2-3 plain sentences for a human "
+    "underwriter. State only what the results say. Never give or imply a "
+    "loan verdict."
+)
 
 
 def _build_compliance_summary(rule_results: dict[str, Any]) -> str:
@@ -43,8 +37,8 @@ def _build_compliance_summary(rule_results: dict[str, Any]) -> str:
 
 
 def _template_reasoning(rule_results: dict[str, Any]) -> str:
-    """Deterministic fallback used when CrewAI isn't installed, or the LLM
-    call fails/times out/mis-parses — the pipeline never blocks here."""
+    """Deterministic fallback used when the local LLM is off, or its
+    call fails/times out/mentions a verdict — the pipeline never blocks here."""
     if not rule_results["critical_flags"]:
         return "All compliance checks passed; no critical issues identified."
     flags_text = "; ".join(rule_results["critical_flags"])
@@ -55,53 +49,9 @@ def _template_reasoning(rule_results: dict[str, Any]) -> str:
 
 
 def run_compliance_reasoning(rule_results: dict[str, Any]) -> str:
-    """Runs the single-agent CrewAI Compliance Reviewer. Never asked to
-    choose a verdict — rule_results are already final by the time this
-    runs (see app.compliance.rules_engine). Falls back to a deterministic
-    summary on any failure so the pipeline never blocks on this step,
-    matching app.agents.decision.crew's failure handling.
-    """
-    summary = _build_compliance_summary(rule_results)
-
-    if not _CREWAI_AVAILABLE or not llm_available():
-        return _template_reasoning(rule_results)
-
-    try:
-        llm_cfg = get_llm_config()
-        model_string = f"{llm_cfg['primary']['provider']}/{llm_cfg['primary']['model']}"
-
-        reviewer = Agent(
-            role="Compliance Reviewer",
-            goal=(
-                "Explain the compliance rule results in plain language for a "
-                "human underwriter. Never suggest or imply an approve/deny/"
-                "suspend decision — that is the Decision Agent's job."
-            ),
-            backstory=(
-                "A regulatory compliance specialist for Indian housing "
-                "finance who reviews KYC, PMLA, RBI Fair Practices, NHB, "
-                "and RERA check results and writes a clear, plain-language "
-                "summary for human reviewers."
-            ),
-            llm=model_string,
-            verbose=False,
-        )
-        task = Task(
-            description=(
-                "Given the following already-finalized compliance rule "
-                "results, write a 2-4 sentence plain-language explanation "
-                "for a human underwriter. Do not suggest a final decision.\n\n"
-                f"{summary}"
-            ),
-            expected_output="A 2-4 sentence plain-language compliance summary.",
-            agent=reviewer,
-        )
-        crew = Crew(agents=[reviewer], tasks=[task], process=Process.sequential, verbose=False)
-        result = crew.kickoff()
-        text = str(result).strip()
-        return text if text else _template_reasoning(rule_results)
-    except Exception:
-        # TODO (Phase 2): retry against FALLBACK_LLM_PROVIDER/MODEL before
-        # falling back to the template, once the exact retry helper used by
-        # app.agents.credit.crew / app.agents.decision.crew is confirmed.
-        return _template_reasoning(rule_results)
+    """Explains the compliance results. Never raises and never changes them."""
+    return explain(
+        system=_SYSTEM,
+        prompt=_build_compliance_summary(rule_results),
+        fallback=_template_reasoning(rule_results),
+    )

@@ -1,6 +1,8 @@
+> **Update:** CrewAI has been removed from the whole system. The "crew" in this document is deterministic rule-based code that mirrors the role structure described below; nothing here calls an LLM.
+
 # Decision Agent
 
-The Decision Agent is the final stage of the Mortgage Underwriting System — a decision-support/pre-screening system for Indian housing finance. It synthesizes outputs from four upstream agents (Document Ingestion, Credit Analysis, Property Valuation, Compliance), applies deterministic risk scoring, runs a CrewAI-based multi-agent reasoning crew, and produces an evidence-backed `APPROVE`, `DENY`, or `SUSPEND` recommendation.
+The Decision Agent is the final stage of the Mortgage Underwriting System — a decision-support/pre-screening system for Indian housing finance. It synthesizes outputs from four upstream agents (Document Ingestion, Credit Analysis, Property Valuation, Compliance), applies deterministic risk scoring, runs a deterministic, rule-based multi-role reasoning crew (Underwriter / Risk Analyst / Report Writer), and produces an evidence-backed `APPROVE`, `DENY`, or `SUSPEND` recommendation.
 
 **Core principle: Deterministic rules decide; LLMs explain and synthesize.**
 
@@ -18,7 +20,7 @@ The Decision Agent is the final stage of the Mortgage Underwriting System — a 
 8. [Agent Comparator](#agent-comparator)
 9. [Risk Engine](#risk-engine)
 10. [Confidence Engine](#confidence-engine)
-11. [CrewAI Decision Crew](#crewai-decision-crew)
+11. [Decision Crew (rule-based)](#crewai-decision-crew)
 12. [Deterministic Finalizer](#deterministic-finalizer)
 13. [Report Writer](#report-writer)
 14. [FastAPI Endpoints](#fastapi-endpoints)
@@ -51,7 +53,7 @@ Decision Node
     +-- Agent Comparator
     +-- Deterministic Risk Engine
     +-- Confidence Engine
-    +-- CrewAI Decision Crew (Underwriter / Risk Analyst / Report Writer)
+    +-- Rule-based Decision Crew (Underwriter / Risk Analyst / Report Writer)
     +-- Deterministic Finalizer
     +-- Report Writer
     |
@@ -98,7 +100,7 @@ backend/
 │   ├── main.py                         # FastAPI endpoints
 │   ├── agents/
 │   │   └── decision/
-│   │       └── crew.py                 # CrewAI agents, tasks, crew
+│   │       └── crew.py                 # rule-based crew (no LLM)
 │   ├── decision/
 │   │   ├── input_validator.py          # Required-field validation
 │   │   ├── contradiction_detector.py   # Cross-agent field comparison
@@ -115,7 +117,7 @@ backend/
 │   ├── models/
 │   │   └── decision.py                 # All Pydantic models/enums
 │   ├── tools/
-│   │   └── policy_validator.py         # CrewAI tools (risk, confidence, policy)
+│   │   └── policy_validator.py         # policy validation helpers
 │   └── services/
 │       ├── audit.py                    # In-memory audit store
 │       ├── llm.py                      # LLM provider configuration
@@ -153,7 +155,7 @@ Defined in `backend/app/graph/state.py` as `UnderwritingState(TypedDict, total=F
 | `agent_comparison` | `dict` | Agent assessment comparison |
 | `risk_assessment` | `dict` | Deterministic risk score/components |
 | `confidence_assessment` | `dict` | Confidence score/factors |
-| `decision_crew_output` | `dict` | CrewAI crew output |
+| `decision_crew_output` | `dict` | crew output |
 | `decision` | `dict` | Final `DecisionResult` |
 | `underwriting_report` | `dict` | Structured report |
 | `human_review_required` | `bool` | HITL flag |
@@ -431,11 +433,11 @@ score = base
 
 ---
 
-## CrewAI Decision Crew
+## Decision Crew (rule-based)
 
 **File:** `backend/app/agents/decision/crew.py`
 
-Three CrewAI agents run sequentially. All output structured JSON with `recommendation`, `confidence`, `reasoning`, `key_factors`, `risks_identified`, and `missing_information`.
+Three rule-based roles run sequentially. All output structured JSON with `recommendation`, `confidence`, `reasoning`, `key_factors`, `risks_identified`, and `missing_information`.
 
 ### Agents
 
@@ -470,7 +472,7 @@ Located in `backend/app/tools/policy_validator.py`:
 
 **File:** `backend/app/decision/finalizer.py`
 
-The **authoritative** decision gate. The CrewAI crew **cannot** override it.
+The **authoritative** decision gate. The crew **cannot** override it.
 
 ### Hard Safety Gates (evaluated in order)
 
@@ -628,13 +630,10 @@ llm:
 **Environment variables** (`backend/.env.example`):
 
 ```
-PRIMARY_LLM_PROVIDER=google
-PRIMARY_LLM_MODEL=gemini-2.0-flash
-FALLBACK_LLM_PROVIDER=groq
-FALLBACK_LLM_MODEL=llama-3.1-70b-versatile
-GOOGLE_API_KEY=your-google-api-key
-GROQ_API_KEY=your-groq-api-key
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/mortgage_uw
+LLM_PROVIDER=ollama            # local model, explanations only; "none" = fixed templates
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.2
+DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/mortgage_uw
 RISK_CONFIG_PATH=config/risk_config.yaml
 ```
 
@@ -770,7 +769,7 @@ pytest
 ## Architectural Invariants
 
 1. **LangGraph orchestrates** — shared state, node sequencing, conditional routing
-2. **CrewAI reasons by role** — Underwriter, Risk Analyst, Report Writer
+2. **The crew reasons by role (rule-based)** — Underwriter, Risk Analyst, Report Writer
 3. **Deterministic logic calculates and finalizes** — Python code, not LLM output
 4. **LLM output cannot bypass safety gates** — the finalizer is authoritative
 5. **Missing critical data cannot become APPROVE** — validation gate
@@ -791,12 +790,10 @@ pytest
 |---|---|
 | API | FastAPI + Uvicorn |
 | Orchestration | LangGraph |
-| Multi-Agent Reasoning | CrewAI |
-| LLM Abstraction | LangChain |
+| Multi-role reasoning | Deterministic rule-based crew |
 | Data Contracts | Pydantic |
 | Configuration | YAML + pydantic-settings |
-| Primary LLM | Google Gemini |
-| Fallback LLM | Groq |
+| Explanations | Optional local LLM (Ollama) |
 | Language | Python 3.11+ |
 | Testing | pytest + pytest-asyncio |
 | Linting | ruff |

@@ -37,20 +37,36 @@ def test_template_reasoning_flagged_case_mentions_flag():
     assert "KYC_INCOMPLETE" in text
 
 
-def test_run_compliance_reasoning_never_raises_and_returns_string():
-    # No real LLM call — either crewai isn't installed (falls back to
-    # template) or an LLM call fails in a test environment with no API
-    # keys, which is caught and also falls back. Either way this must not
-    # raise and must return non-empty text.
+def test_run_compliance_reasoning_uses_template_when_llm_is_off():
     result = run_compliance_reasoning(CLEAN_RESULTS)
-    assert isinstance(result, str)
-    assert len(result) > 0
+    assert result == _template_reasoning(CLEAN_RESULTS)
 
 
-def test_no_api_key_skips_llm_and_uses_template(monkeypatch):
+def test_local_llm_text_is_used_when_available(monkeypatch):
     from unittest.mock import patch
 
-    for key in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY"):
-        monkeypatch.delenv(key, raising=False)
-    with patch("app.agents.compliance.crew.Agent", side_effect=AssertionError("LLM must not be used")):
-        assert len(run_compliance_reasoning(CLEAN_RESULTS)) > 0
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    with patch("app.services.llm.llm_available", return_value=True),          patch("app.services.llm.httpx.post") as post:
+        post.return_value.json.return_value = {"response": "KYC failed because the Aadhaar was not submitted."}
+        post.return_value.raise_for_status = lambda: None
+        text = run_compliance_reasoning(FLAGGED_RESULTS)
+    assert text == "KYC failed because the Aadhaar was not submitted."
+
+
+def test_llm_text_that_states_a_verdict_is_rejected(monkeypatch):
+    from unittest.mock import patch
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    with patch("app.services.llm.llm_available", return_value=True),          patch("app.services.llm.httpx.post") as post:
+        post.return_value.json.return_value = {"response": "The application is eligible and should be approved."}
+        post.return_value.raise_for_status = lambda: None
+        text = run_compliance_reasoning(FLAGGED_RESULTS)
+    assert text == _template_reasoning(FLAGGED_RESULTS)
+
+
+def test_llm_failure_falls_back_to_template(monkeypatch):
+    from unittest.mock import patch
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    with patch("app.services.llm.llm_available", return_value=True),          patch("app.services.llm.httpx.post", side_effect=TimeoutError("slow")):
+        assert run_compliance_reasoning(FLAGGED_RESULTS) == _template_reasoning(FLAGGED_RESULTS)

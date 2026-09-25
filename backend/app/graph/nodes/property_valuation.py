@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.graph.state import UnderwritingState
+from app.services.llm import explain
 from app.tools.geocoder import geocode_address
 from app.tools.external_api import fetch_api_valuation
 
@@ -165,52 +163,26 @@ def property_valuation_node(
     difference = 0
 
     # ---------------------------------------------------------
-    # OPTIONAL GEMINI EXPLANATION
+    # EXPLANATION (local LLM, template fallback)
     # ---------------------------------------------------------
 
-    if os.environ.get("GEMINI_API_KEY"):
-
-        try:
-
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-3.1-flash-lite"
-            )
-
-            prompt = f"""
-You are a Property Valuation Assistant.
-
-Explain the property valuation concisely.
-
-Property:
-{prop}
-
-Final Estimated Value:
-{estimated_value}
-
-AVnester Estimated Value:
-{api_est}
-
-Local Comparable Value:
-{comp_value}
-
-Comparables Found:
-{len(comparables)}
-
-Confidence:
-{confidence_score:.2f}
-
-Risk Flags:
-{risk_flags}
-"""
-
-            response = llm.invoke(
-                [HumanMessage(content=prompt)]
-            )
-
-            explanation = response.content
-
-        except Exception:
-            pass
+    explanation = explain(
+        system=(
+            "You are a property valuation assistant. Explain the valuation in "
+            "2-3 plain sentences using only the figures given. Never give or "
+            "imply a loan verdict."
+        ),
+        prompt="\n".join([
+            f"Property: {prop.get('property_type')} in {prop.get('locality')}, {prop.get('city')}, "
+            f"{prop.get('area_sqft')} sq ft",
+            f"Estimated value: {estimated_value}",
+            f"Median price per sq ft: {price_per_sqft}",
+            f"Comparable listings used: {len(comparables)} ({scope}-level)",
+            f"Valuation confidence: {confidence_score:.2f}",
+            f"Risk flags: {risk_flags}",
+        ]),
+        fallback=explanation,
+    )
 
     # ---------------------------------------------------------
     # FINAL OUTPUT

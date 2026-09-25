@@ -4,7 +4,7 @@ The Credit Analysis Agent sits between Document Ingestion and Property Valuation
 
 **Core principle: deterministic rules decide; the LLM only explains.** This is the same principle the Decision Agent's crew follows (see `README_decision.md`) - every field on `credit_analysis` except `reasoning` is plain, auditable Python.
 
-**This is not the final loan decision.** `credit_analysis.preliminary_decision` is this agent's own credit-specific call - the Decision Agent still runs its own independent 6-component risk engine and CrewAI crew over `credit_analysis`'s other fields before reaching `decision.decision`.
+**This is not the final loan decision.** `credit_analysis.preliminary_decision` is this agent's own credit-specific call - the Decision Agent still runs its own independent 6-component risk engine and rule-based crew over `credit_analysis`'s other fields before reaching `decision.decision`.
 
 ---
 
@@ -65,7 +65,7 @@ backend/
 ├── app/
 │   ├── agents/
 │   │   └── credit/
-│   │       └── crew.py                 # Single CrewAI agent: explains, never decides
+│   │       └── crew.py                 # Deterministic explanation text (no LLM)
 │   ├── credit/
 │   │   ├── config.py                   # YAML loader + in-code fallback defaults
 │   │   ├── employment.py               # employment_type string normalization
@@ -267,7 +267,7 @@ confidence = 0.90
 
 ## LLM Reasoning
 
-`app.agents.credit.crew.run_credit_reasoning` runs a single CrewAI `Agent`/`Task` ("Credit Risk Analyst") that explains the already-final assessment in 2-4 sentences, using the same primary/fallback LLM configuration as the Decision Agent (`app.services.llm`, Google Gemini primary / Groq fallback). On any failure (LLM outage, parse error) it falls back to a deterministic summary string rather than raising - the pipeline never blocks on the LLM step, matching `app.agents.decision.crew`'s failure handling.
+`app.agents.credit.crew.run_credit_reasoning` builds a deterministic plain-language explanation of the already-final assessment (2-4 sentences from CIBIL band, FOIR, LTV and flags). It uses no LLM and cannot fail.
 
 `_build_credit_summary` (the prompt's structured input) is a pure function, unit-tested directly in `test_credit_crew.py` without invoking a real LLM - same pattern as `test_crew.py` for the Decision Agent.
 
@@ -349,4 +349,4 @@ pytest tests/test_credit_*.py -v
 
 ## Disclaimer
 
-This is a decision-support/pre-screening output, consistent with the rest of this system (see `README_decision.md`). `preliminary_decision` is this agent's own credit-specific call, not a final lending decision - the Decision Agent's independent risk engine, contradiction checks, and CrewAI crew still run on top of it. Prototype thresholds and weights here are engineering choices, not official RBI/lender regulatory requirements.
+This is a decision-support/pre-screening output, consistent with the rest of this system (see `README_decision.md`). `preliminary_decision` is this agent's own credit-specific call, not a final lending decision - the Decision Agent's independent risk engine, contradiction checks, and rule-based crew still run on top of it. Prototype thresholds and weights here are engineering choices, not official RBI/lender regulatory requirements.

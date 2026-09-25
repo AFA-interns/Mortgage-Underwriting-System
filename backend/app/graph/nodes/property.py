@@ -1,6 +1,4 @@
-import os
-from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from app.services.llm import explain
 from app.tools.geocoder import geocode_address
 from app.tools.external_api import fetch_api_valuation
 from app.graph.property_state import AgentState
@@ -67,27 +65,22 @@ def reconcile_node(state: AgentState) -> AgentState:
 
 
 def explanation_node(state: AgentState) -> AgentState:
-    if not os.environ.get("GEMINI_API_KEY"):
-        return {"explanation": "Mock Explanation: Property valued at {} based on API and {} comparables.".format(
-            state.get("final_value", {}).get("estimated_market_value_inr"),
-            len(state.get("candidate_comps", []))
-        )}
-
-    llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
-
-    prompt = f"""
-    You are a Property Valuation Assistant. Explain the valuation concisely.
-    Property: {state['property']}
-    API Estimated Value: {state['api_valuation'].get('estimated_market_value_inr')}
-    Comparables Found: {len(state['candidate_comps'])}
-    Confidence: {state['confidence']['label']} ({state['confidence']['score']})
-    Risk Flags: {state['risk_flags']}
-    """
-
-    try:
-        response = llm.invoke([HumanMessage(content=prompt)])
-        explanation = response.content
-    except Exception as e:
-        explanation = f"Error generating explanation: {str(e)}"
-
+    value = state.get("final_value", {}).get("estimated_market_value_inr")
+    comps = state.get("candidate_comps", [])
+    conf = state.get("confidence", {})
+    fallback = "Property valued at {} based on {} AVnester comparables.".format(value, len(comps))
+    explanation = explain(
+        system=(
+            "You are a property valuation assistant. Explain the valuation in 2-3 plain "
+            "sentences using only the figures given. Never give or imply a loan verdict."
+        ),
+        prompt="\n".join([
+            f"Property: {state.get('property')}",
+            f"Estimated value: {value}",
+            f"Comparable listings: {len(comps)}",
+            f"Confidence: {conf.get('label')} ({conf.get('score')})",
+            f"Risk flags: {state.get('risk_flags')}",
+        ]),
+        fallback=fallback,
+    )
     return {"explanation": explanation}
