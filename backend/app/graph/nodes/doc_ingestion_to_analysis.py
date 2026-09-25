@@ -50,12 +50,13 @@ def doc_ingestion_to_analysis_node(state: UnderwritingState) -> dict[str, Any]:
     for m in docs_meta:
         m_dict = _as_dict(m)
         documents.append({
-            "type": m_dict.get("document_type", "UNKNOWN"),
+            "type": m_dict.get("classified_type", "UNKNOWN"),
+            "filename": m_dict.get("original_filename", ""),
             "status": "processed" if m_dict.get("page_count", 0) > 0 else "empty",
         })
     
     # Missing documents from checklist
-    missing_docs = _as_list(checklist.get("missing_documents"))
+    missing_docs = _as_list(checklist.get("missing_mandatory_documents"))
     
     # Contradictions from reconciliation
     contradictions = []

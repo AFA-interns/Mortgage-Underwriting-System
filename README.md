@@ -146,7 +146,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Geocoding | geopy (Nominatim) |
 | Data | pandas (comparables CSV), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (149 tests) |
+| Testing | pytest (151 tests) |
 | **No external LLMs** — Fully deterministic, zero API keys required |
 
 ---
@@ -183,7 +183,7 @@ mortgage-underwriting-system/
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
 │   ├── config/                         # risk_, credit_, compliance_config.yaml
-│   ├── tests/                          # 149 tests (unit + e2e)
+│   ├── tests/                          # 151 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -206,7 +206,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 149 tests pass
+pytest tests/ -v           # 151 tests pass
 python smoke_test_pipeline.py  # Full pipeline with mock PDFs
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -221,11 +221,24 @@ Start the backend first (`uvicorn app.main:app --port 8000`).
 
 ---
 
+## 🖥️ Running the full stack
+
+```bash
+cd backend  && .env\Scripts\python.exe -m uvicorn app.main:app --port 8000
+cd frontend && npx pnpm@10 dev          # http://localhost:3000
+```
+
+In the UI, **New application** accepts real PDFs (or one of four demo scenarios) and runs the whole pipeline: ingestion → credit + property + compliance → decision. Results appear on the dashboard, the application's workflow page, per-agent reports, the human-review queue and the final report. Applications are kept in memory (they reset when the backend restarts).
+
 ## 📡 API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/underwriting/{application_id}/run` | Execute full pipeline |
+| POST | `/api/v1/underwriting/run` | **Full pipeline from uploaded PDFs** (multipart) or `demo_scenario` |
+| GET | `/api/v1/applications`, `/api/v1/applications/{id}` | Stored results (agents, report, review items) |
+| GET/POST | `/api/v1/review-items`, `/api/v1/review-items/{id}/resolve` | Human-review queue |
+| GET | `/api/v1/demo-scenarios` | Bundled demo borrowers |
+| POST | `/underwriting/{application_id}/run` | Execute full pipeline (server-side file paths) |
 | POST | `/document-ingestion/process` | Document ingestion only |
 | POST | `/property-valuation/estimate` | Property valuation only |
 | GET | `/health` | Health check |
@@ -259,7 +272,7 @@ Start the backend first (`uvicorn app.main:app --port 8000`).
 | E2E Pipeline (APPROVE, DENY, SUSPEND, Compliance Gate) | 8 | 100% |
 | Compliance (6 rule modules, scoring, crew, node) | 43 | 100% |
 | Pipeline regressions (graph, AVnester valuation, compliance mapping, scenario 1 APPROVE) | 10 | 100% |
-| **Total** | **149** | **100%** |
+| **Total** | **151** | **100%** |
 
 ---
 

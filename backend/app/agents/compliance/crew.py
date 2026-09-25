@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.llm import get_llm_config
+from app.services.llm import get_llm_config, llm_available
 
 try:
     from crewai import Agent, Crew, Process, Task
@@ -63,7 +63,7 @@ def run_compliance_reasoning(rule_results: dict[str, Any]) -> str:
     """
     summary = _build_compliance_summary(rule_results)
 
-    if not _CREWAI_AVAILABLE:
+    if not _CREWAI_AVAILABLE or not llm_available():
         return _template_reasoning(rule_results)
 
     try:

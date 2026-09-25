@@ -16,3 +16,15 @@ def get_llm_config() -> dict[str, Any]:
         "primary": {"provider": _PRIMARY_PROVIDER, "model": _PRIMARY_MODEL},
         "fallback": {"provider": _FALLBACK_PROVIDER, "model": _FALLBACK_MODEL},
     }
+
+
+def llm_available() -> bool:
+    """True when an API key exists for the primary provider. Callers skip the
+    LLM entirely (and use their deterministic fallback) when it doesn't."""
+    keys = {
+        "google": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        "gemini": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        "groq": ("GROQ_API_KEY",),
+        "openai": ("OPENAI_API_KEY",),
+    }.get(_PRIMARY_PROVIDER.lower(), ())
+    return any(os.getenv(k) for k in keys)

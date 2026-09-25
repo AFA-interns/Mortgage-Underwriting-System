@@ -1,29 +1,26 @@
-import type { Application } from '@/lib/underwriting-service'
+import { formatInr, type ApplicationView } from '@/lib/underwriting-service'
 
 export type DashboardMetrics = {
-  activeApplications: number
-  averageDecisionTime: string
+  needsReview: number
+  totalApplications: number
+  averageProcessing: string
   approvalRate: string
   portfolioValue: string
-  comparisons: Partial<Record<'activeApplications' | 'averageDecisionTime' | 'approvalRate' | 'portfolioValue', string>>
 }
 
-export function getDashboardMetrics(applications: Application[]): DashboardMetrics {
-  const decided = applications.filter((application) => application.decisionAt && application.finalDecision)
-  const approved = decided.filter((application) => application.finalDecision === 'Approved').length
-  const portfolio = applications.reduce((total, application) => total + (Number(application.amount.replace(/[^0-9.-]/g, '')) || 0), 0)
-  const decisionTimes = decided.map((application) => {
-    const submitted = Date.parse(application.submitted)
-    const decidedAt = Date.parse(application.decisionAt ?? '')
-    return submitted && decidedAt ? Math.max(0, decidedAt - submitted) / 3600000 : null
-  }).filter((value): value is number => value !== null)
-  const averageHours = decisionTimes.length ? decisionTimes.reduce((sum, value) => sum + value, 0) / decisionTimes.length : null
+export function getDashboardMetrics(applications: ApplicationView[]): DashboardMetrics {
+  const decided = applications.filter((a) => a.status === 'Approved' || a.status === 'Declined')
+  const approved = decided.filter((a) => a.status === 'Approved').length
+  const portfolio = applications.reduce((total, a) => total + (a.loan.amount ?? 0), 0)
+  const avg = applications.length
+    ? applications.reduce((sum, a) => sum + a.processing_seconds, 0) / applications.length
+    : null
 
   return {
-    activeApplications: applications.filter((application) => application.status !== 'Approved').length,
-    averageDecisionTime: averageHours === null ? '—' : `${averageHours.toFixed(1)}h`,
+    needsReview: applications.filter((a) => a.status === 'Needs Review').length,
+    totalApplications: applications.length,
+    averageProcessing: avg === null ? '—' : `${avg.toFixed(1)}s`,
     approvalRate: decided.length ? `${Math.round((approved / decided.length) * 100)}%` : '—',
-    portfolioValue: applications.length ? `$${portfolio.toLocaleString('en-US')}` : '—',
-    comparisons: {},
+    portfolioValue: applications.length ? formatInr(portfolio) : '—',
   }
 }

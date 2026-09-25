@@ -53,6 +53,115 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+# -------------------------------------------------------
+# Full-pipeline endpoints used by the frontend
+# -------------------------------------------------------
+
+from app.services.applications import DEMO_SCENARIOS, run_application, store  # noqa: E402
+
+
+@app.get("/api/v1/demo-scenarios")
+def list_demo_scenarios() -> list[dict[str, Any]]:
+    return [
+        {"id": sid, "label": s["label"], "description": s["description"], "profile": s["profile"]}
+        for sid, s in DEMO_SCENARIOS.items()
+    ]
+
+
+@app.post("/api/v1/underwriting/run")
+def run_full_pipeline(
+    name: str = Form(""),
+    monthly_income: float = Form(0),
+    employment_type: str = Form("Salaried"),
+    loan_amount: float = Form(0),
+    loan_tenure_months: int = Form(240),
+    property_value: float = Form(0),
+    existing_debt: float = Form(0),
+    demo_scenario: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default=[]),
+) -> dict[str, Any]:
+    """Runs Document Ingestion -> Credit + Property + Compliance -> Decision.
+
+    Either upload PDFs, or pass `demo_scenario` to use the bundled mock documents.
+    """
+    if demo_scenario:
+        scenario = DEMO_SCENARIOS.get(demo_scenario)
+        if scenario is None:
+            raise HTTPException(400, f"Unknown demo scenario '{demo_scenario}'. Valid: {list(DEMO_SCENARIOS)}")
+        from tests.mock_data.generate_docs import generate_all_mock_scenarios
+
+        paths = generate_all_mock_scenarios()[scenario["key"]]
+        return run_application(
+            profile=dict(scenario["profile"]),
+            file_paths=paths,
+            file_names=[os.path.basename(p) for p in paths],
+            bureau=scenario["bureau"],
+            source=f"demo:{demo_scenario}",
+        )
+
+    uploads = [f for f in files if f.filename]
+    if not uploads:
+        raise HTTPException(400, "Upload at least one PDF document (or choose a demo scenario).")
+    bad = [f.filename for f in uploads if not f.filename.lower().endswith(".pdf")]
+    if bad:
+        raise HTTPException(400, f"Only PDF documents are supported. Rejected: {bad}")
+    if not name.strip() or loan_amount <= 0 or monthly_income <= 0:
+        raise HTTPException(400, "Borrower name, monthly income and loan amount are required.")
+
+    tmp_dir = tempfile.mkdtemp(prefix="uw_upload_")
+    try:
+        paths: list[str] = []
+        for i, upload in enumerate(uploads):
+            dest = os.path.join(tmp_dir, f"{i:02d}_{os.path.basename(upload.filename)}")
+            with open(dest, "wb") as out:
+                shutil.copyfileobj(upload.file, out)
+            paths.append(dest)
+
+        profile = {
+            "name": name.strip(),
+            "monthly_income": monthly_income,
+            "employment_type": employment_type,
+            "loan_amount": loan_amount,
+            "loan_tenure_months": loan_tenure_months,
+            "property_value": property_value,
+            "existing_debt": existing_debt,
+        }
+        return run_application(
+            profile=profile,
+            file_paths=paths,
+            file_names=[u.filename for u in uploads],
+            source="upload",
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@app.get("/api/v1/applications")
+def list_applications() -> list[dict[str, Any]]:
+    return store.list()
+
+
+@app.get("/api/v1/applications/{application_id}")
+def get_application(application_id: str) -> dict[str, Any]:
+    view = store.get(application_id)
+    if view is None:
+        raise HTTPException(404, f"Application '{application_id}' not found.")
+    return view
+
+
+@app.get("/api/v1/review-items")
+def list_review_items() -> list[dict[str, Any]]:
+    return store.review_items()
+
+
+@app.post("/api/v1/review-items/{item_id}/resolve")
+def resolve_review_item(item_id: str) -> dict[str, Any]:
+    item = store.resolve_review_item(item_id)
+    if item is None:
+        raise HTTPException(404, f"Review item '{item_id}' not found.")
+    return item
+
+
 @app.post("/underwriting/{application_id}/run")
 async def run_underwriting(application_id: str, request: UnderwritingRequest) -> dict[str, Any]:
     """Run the full Decision Agent pipeline."""

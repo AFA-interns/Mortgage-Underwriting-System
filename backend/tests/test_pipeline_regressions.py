@@ -147,3 +147,20 @@ def test_scenario_1_clean_prime_is_approved_on_avnester_data(mock_docs):
     assert result["property_analysis"]["estimated_value"] == 3125 * 2400
     assert result["compliance_analysis"]["critical_flags"] == []
     assert result["decision"]["decision"] == "APPROVE"
+
+
+def test_doc_transform_maps_real_metadata_and_missing_documents():
+    from app.graph.nodes.doc_ingestion_to_analysis import doc_ingestion_to_analysis_node
+
+    out = doc_ingestion_to_analysis_node({
+        "doc_ingestion_output": {
+            "documents_metadata": [
+                {"classified_type": "PAN_CARD", "original_filename": "pan.pdf", "page_count": 1},
+            ],
+            "checklist": {"missing_mandatory_documents": ["AADHAAR_CARD"]},
+        }
+    })["document_analysis"]
+    assert out["documents"][0]["type"] == "PAN_CARD"
+    assert out["documents"][0]["filename"] == "pan.pdf"
+    assert out["missing_documents"] == ["AADHAAR_CARD"]
+    assert "missing_documents" in out["flags"]

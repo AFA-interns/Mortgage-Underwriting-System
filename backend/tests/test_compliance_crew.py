@@ -45,3 +45,12 @@ def test_run_compliance_reasoning_never_raises_and_returns_string():
     result = run_compliance_reasoning(CLEAN_RESULTS)
     assert isinstance(result, str)
     assert len(result) > 0
+
+
+def test_no_api_key_skips_llm_and_uses_template(monkeypatch):
+    from unittest.mock import patch
+
+    for key in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    with patch("app.agents.compliance.crew.Agent", side_effect=AssertionError("LLM must not be used")):
+        assert len(run_compliance_reasoning(CLEAN_RESULTS)) > 0

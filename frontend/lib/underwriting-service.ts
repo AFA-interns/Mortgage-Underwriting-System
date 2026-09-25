@@ -1,55 +1,100 @@
-export type ApplicationStatus = 'In Review' | 'Approved' | 'Needs Review'
-export type ReviewStatus = 'Open' | 'In Progress' | 'Resolved'
+// Typed client for the FastAPI backend. All calls go through the Next.js
+// rewrite (/api/v1/* -> http://127.0.0.1:8000/api/v1/*).
 
-export type Application = {
+export type StageStatus = 'Complete' | 'Flagged' | 'Hard gate'
+export type ApplicationStatus = 'Approved' | 'Declined' | 'Needs Review'
+
+export type Stage = {
+  name: string
+  confidence: number | null
+  status: StageStatus
+  subtitle: string
+  highlights: string[]
+}
+
+export type ReviewItem = {
+  id: string
+  application_id: string
+  title: string
+  severity: 'High' | 'Medium' | 'Low'
+  owner: string
+  evidence: string
+  status: 'Open' | 'Resolved'
+  resolved_at?: string
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export type ApplicationView = {
   id: string
   borrower: string
-  property: string
-  type: string
-  amount: string
-  submitted: string
+  created_at: string
+  processing_seconds: number
+  source: string
+  documents: string[]
   status: ApplicationStatus
-  risk: string
-  score: string
-  address: string
-  income: string
-  decisionAt?: string
-  finalDecision?: 'Approved' | 'Declined' | 'Referred'
+  decision: Record<string, any>
+  loan: {
+    amount?: number
+    tenure_months?: number
+    monthly_income?: number
+    existing_debt?: number
+    employment_type?: string
+    declared_property_value?: number
+  }
+  property_label: string
+  property_type: string
+  stages: Stage[]
+  agents: {
+    document: Record<string, any>
+    credit: Record<string, any>
+    property: Record<string, any>
+    compliance: Record<string, any>
+    decision: Record<string, any>
+  }
+  report: Record<string, any>
+  errors: string[]
+  review_items: ReviewItem[]
 }
 
-export type Agent = { id: string; name: string; owner: string; status: 'Complete' | 'Hard gate' | 'In progress'; confidence: string; risk: string }
-export type ReviewItem = { id: string; title: string; severity: 'High' | 'Medium' | 'Low'; owner: string; status: ReviewStatus; due: string; evidence: string }
-export type FinalReport = { id: string; generatedAt: string; recommendation: 'Approve with conditions' | 'Refer to human review'; confidence: string; conditions: string[]; rationale: string[] }
+export type DemoScenario = {
+  id: string
+  label: string
+  description: string
+  profile: Record<string, any>
+}
 
-const applications: Application[] = []
-const agents: Agent[] = []
-const reviewItems: ReviewItem[] = []
-let finalReport: FinalReport | null = null
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, init)
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`
+    try {
+      const body = await res.json()
+      if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(detail)
+  }
+  return res.json() as Promise<T>
+}
 
 export const underwritingService = {
-  async listApplications() { return [...applications] },
-  async getApplication(id: string) { return applications.find((app) => app.id === id) ?? null },
-  async createApplication(input: Omit<Application, 'id' | 'submitted' | 'status' | 'risk' | 'score'>) {
-    const application: Application = { ...input, id: `LN-${new Date().getFullYear()}-${String(applications.length + 1).padStart(4, '0')}`, submitted: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), status: 'In Review', risk: 'Pending', score: '—' }
-    applications.unshift(application)
-    return application
-  },
-  async listAgents() { return [...agents] },
-  async listReviewItems() { return [...reviewItems] },
-  async resolveReview(id: string) { const item = reviewItems.find((review) => review.id === id); if (item) item.status = 'Resolved'; return item },
-  async getFinalReport() { return finalReport },
-  async triggerPropertyValuation(payload: any) {
-    try {
-      const res = await fetch('/api/v1/valuation/evaluate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-      if (!res.ok) throw new Error("Valuation API failed")
-      return await res.json()
-    } catch (err) {
-      console.error("Valuation Agent failed", err)
-      return null
-    }
-  },
+  listApplications: () => request<ApplicationView[]>('/api/v1/applications'),
+  getApplication: (id: string) => request<ApplicationView>(`/api/v1/applications/${encodeURIComponent(id)}`),
+  listDemoScenarios: () => request<DemoScenario[]>('/api/v1/demo-scenarios'),
+  /** Runs the full pipeline: ingestion -> credit + property + compliance -> decision. */
+  runApplication: (form: FormData) => request<ApplicationView>('/api/v1/underwriting/run', { method: 'POST', body: form }),
+  listReviewItems: () => request<ReviewItem[]>('/api/v1/review-items'),
+  resolveReview: (id: string) =>
+    request<ReviewItem>(`/api/v1/review-items/${encodeURIComponent(id)}/resolve`, { method: 'POST' }),
 }
+
+export const formatInr = (value: unknown): string => {
+  if (typeof value !== 'number' || !isFinite(value) || value <= 0) return '—'
+  if (value >= 1e7) return `₹${(value / 1e7).toFixed(2)} Cr`
+  if (value >= 1e5) return `₹${(value / 1e5).toFixed(2)} L`
+  return `₹${Math.round(value).toLocaleString('en-IN')}`
+}
+
+export const formatPct = (value: unknown, digits = 0): string =>
+  typeof value === 'number' && isFinite(value) ? `${(value * 100).toFixed(digits)}%` : '—'

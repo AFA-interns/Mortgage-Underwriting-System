@@ -62,3 +62,5 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 next-env.d.ts
+*.err
+tsconfig.tsbuildinfo
