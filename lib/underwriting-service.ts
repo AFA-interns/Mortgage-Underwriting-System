@@ -38,4 +38,18 @@ export const underwritingService = {
   async listReviewItems() { return [...reviewItems] },
   async resolveReview(id: string) { const item = reviewItems.find((review) => review.id === id); if (item) item.status = 'Resolved'; return item },
   async getFinalReport() { return finalReport },
+  async triggerPropertyValuation(payload: any) {
+    try {
+      const res = await fetch('/api/v1/valuation/evaluate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) throw new Error("Valuation API failed")
+      return await res.json()
+    } catch (err) {
+      console.error("Valuation Agent failed", err)
+      return null
+    }
+  },
 }
