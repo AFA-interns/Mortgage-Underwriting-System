@@ -237,7 +237,7 @@ uvicorn app.main:app --reload  # Start API server
 
 | How | Command / action | What you see |
 |-----|------------------|--------------|
-| Terminal (quickest) | `cd backend` then `.env\Scripts\python.exe smoke_test_pipeline.py` | Each scenario's documents, CIBIL/FOIR/LTV, live valuation, compliance flags, decision and rationale, ending in `SMOKE TEST PASSED` |
+| Terminal (quickest) | `cd backend`, then `python smoke_test_pipeline.py` (with the venv active) | Each scenario's documents, CIBIL/FOIR/LTV, live valuation, compliance flags, decision and rationale, ending in `SMOKE TEST PASSED` |
 | Browser | Start backend + frontend, open http://localhost:3000, **New application** → pick a demo scenario | The full workflow, agent reports, review queue and final report |
 
 Expected results: **clean → APPROVE** (risk 88), **name mismatch / salary mismatch / missing documents → SUSPEND** (human review). The mock PDFs are generated into `backend/mock_documents/` by `tests/mock_data/generate_docs.py`.
