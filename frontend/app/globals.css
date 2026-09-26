@@ -88,3 +88,8 @@ button { cursor: pointer; }
 .review-docs { margin: 12px 0; }
 .review-docs > span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: #8a9aab; margin-bottom: 8px; }
 .review-docs .doc-links { justify-content: flex-start; }
+
+/* Keep the sidebar pinned while the page scrolls (desktop); mobile keeps its slide-out drawer. */
+@media (min-width: 761px) {
+  .sidebar { position: sticky; top: 0; height: 100vh; min-height: 0; overflow-y: auto; align-self: flex-start; }
+}
