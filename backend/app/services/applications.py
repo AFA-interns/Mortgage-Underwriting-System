@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.graph.workflow import build_underwriting_graph
+from app.services.credit_bureau import SOURCE_DEMO
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ _CLEAN_BUREAU = {
     "cibil_score": 785, "settled_accounts": 0, "written_off_accounts": 0,
     "max_dpd_last_12_months": 0, "recent_enquiries_last_90_days": 1,
     "credit_card_outstanding_total": 20000.0, "oldest_account_age_months": 96,
+    "source": SOURCE_DEMO,
 }
 
 DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
@@ -332,6 +334,7 @@ def run_application(
     file_names: list[str],
     bureau: dict[str, Any] | None = None,
     source: str = "upload",
+    bureau_consent: bool = False,
 ) -> dict[str, Any]:
     """Runs the full pipeline (ingestion -> credit/property/compliance -> decision)."""
     app_id = store.next_id()
@@ -369,6 +372,13 @@ def run_application(
     ]
 
     view = build_view(app_id, result, profile, file_names, started, source, document_files)
+    # Audit record of the applicant's consent to a bureau pull. Nothing is
+    # pulled yet (no bureau integration), but the consent is captured now so a
+    # future real pull has a record to rely on.
+    view["bureau_consent"] = {
+        "given": bool(bureau_consent),
+        "recorded_at": datetime.now(UTC).isoformat(),
+    }
     store.save(view)
     store.save_documents(app_id, stored)
     return view

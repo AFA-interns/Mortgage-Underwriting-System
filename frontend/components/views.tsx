@@ -134,7 +134,9 @@ export function NewApplication({ setView, onDone }: { setView: (v: View) => void
   const [form, setForm] = useState({
     name: '', monthly_income: '', employment_type: 'Salaried', loan_amount: '',
     loan_tenure_months: '240', property_value: '', existing_debt: '0',
+    declared_cibil_score: '',
   })
+  const [bureauConsent, setBureauConsent] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [scenarios, setScenarios] = useState<DemoScenario[]>([])
   const [running, setRunning] = useState<string | null>(null)
@@ -168,8 +170,14 @@ export function NewApplication({ setView, onDone }: { setView: (v: View) => void
       setError('Upload at least one PDF document, or run a demo scenario.')
       return
     }
+    const score = form.declared_cibil_score.trim()
+    if (score && (!Number.isInteger(Number(score)) || Number(score) < 300 || Number(score) > 900)) {
+      setError('CIBIL score must be a whole number between 300 and 900.')
+      return
+    }
     const data = new FormData()
-    Object.entries(form).forEach(([k, v]) => data.append(k, v))
+    Object.entries(form).forEach(([k, v]) => { if (v !== '') data.append(k, v) })
+    data.append('bureau_consent', String(bureauConsent))
     files.forEach((f) => data.append('files', f))
     void submit(data, 'your application')
   }
@@ -208,6 +216,8 @@ export function NewApplication({ setView, onDone }: { setView: (v: View) => void
               <label>Tenure (months)<input name="loan_tenure_months" type="number" min="12" value={form.loan_tenure_months} onChange={set('loan_tenure_months')} /></label>
               <label>Declared property value (₹)<input name="property_value" type="number" min="0" value={form.property_value} onChange={set('property_value')} placeholder="7500000" /></label>
               <label>Existing monthly EMIs (₹)<input name="existing_debt" type="number" min="0" value={form.existing_debt} onChange={set('existing_debt')} /></label>
+              <label>CIBIL score (optional)<input name="declared_cibil_score" type="number" min="300" max="900" value={form.declared_cibil_score} onChange={set('declared_cibil_score')} placeholder="300–900" /></label>
+              <label className="span-2 consent-row"><input type="checkbox" name="bureau_consent" checked={bureauConsent} onChange={(e) => setBureauConsent(e.target.checked)} /> The applicant consents to a credit bureau report being pulled. <small>Leave the score blank to use simulated bureau data, which is not the applicant&apos;s real credit.</small></label>
             </div>
           </section>
 
@@ -371,6 +381,9 @@ function AgentDetail({ app, id }: { app: ApplicationView; id: string }) {
           <MetricBar label={`FOIR (limit ${formatPct(c.raw_data?.foir_threshold)})`} value={formatPct(c.foir, 1)} score={((c.foir ?? 0) / (c.raw_data?.foir_threshold || 0.55)) * 100} tone="blue" />
           <MetricBar label="Composite credit risk score" value={`${c.risk_score ?? '—'} / 100`} score={c.risk_score ?? 0} tone="green" />
         </div>
+        {c.raw_data?.bureau_source && c.raw_data.bureau_source !== 'bureau' && (
+          <div className="risk-callout amber" data-testid="bureau-source-note"><strong>Bureau data: {c.raw_data.bureau_source_label}</strong><span>{c.raw_data.bureau_source === 'applicant_declared' ? 'The score was entered manually and has not been verified with a credit bureau; other bureau fields use neutral defaults.' : 'This is not a real credit report, so the credit outcome should not be relied on for an actual lending decision.'}</span></div>
+        )}
         <div className="calculation-note"><strong>Reasoning</strong><span>{c.reasoning}</span></div>
         {(c.flags ?? []).length > 0 && <div className="risk-callout amber"><strong>Red flags</strong><span>{c.flags.join(' · ')}</span></div>}
       </div>

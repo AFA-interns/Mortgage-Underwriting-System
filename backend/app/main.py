@@ -60,6 +60,7 @@ async def health() -> dict[str, str]:
 # -------------------------------------------------------
 
 from app.services.applications import DEMO_SCENARIOS, run_application, store  # noqa: E402
+from app.services.credit_bureau import declared_score_report  # noqa: E402
 
 MAX_UPLOAD_BYTES = 20_000_000
 
@@ -81,6 +82,8 @@ def run_full_pipeline(
     loan_tenure_months: int = Form(240),
     property_value: float = Form(0),
     existing_debt: float = Form(0),
+    declared_cibil_score: Optional[int] = Form(None),
+    bureau_consent: bool = Form(False),
     demo_scenario: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
 ) -> dict[str, Any]:
@@ -111,6 +114,12 @@ def run_full_pipeline(
         raise HTTPException(400, f"Only PDF documents are supported. Rejected: {bad}")
     if not name.strip() or loan_amount <= 0 or monthly_income <= 0:
         raise HTTPException(400, "Borrower name, monthly income and loan amount are required.")
+    bureau = None
+    if declared_cibil_score is not None:
+        try:
+            bureau = declared_score_report(declared_cibil_score)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     tmp_dir = tempfile.mkdtemp(prefix="uw_upload_")
     try:
@@ -136,7 +145,9 @@ def run_full_pipeline(
             profile=profile,
             file_paths=paths,
             file_names=[u.filename for u in uploads],
+            bureau=bureau,
             source="upload",
+            bureau_consent=bureau_consent,
         )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

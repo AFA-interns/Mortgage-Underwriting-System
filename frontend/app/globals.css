@@ -93,3 +93,7 @@ button { cursor: pointer; }
 @media (min-width: 761px) {
   .sidebar { position: sticky; top: 0; height: 100vh; min-height: 0; overflow-y: auto; align-self: flex-start; }
 }
+
+.input-grid label.consent-row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; gap: 8px; font-weight: 400; }
+.consent-row input { width: auto; margin-top: 2px; }
+.consent-row small { flex-basis: 100%; color: #8998aa; font-size: 10px; }

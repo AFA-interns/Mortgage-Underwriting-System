@@ -15,7 +15,7 @@ from app.credit.scoring import compute_confidence, compute_credit_risk_score, ge
 from app.credit.stability import assess_income_stability
 from app.graph.state import UnderwritingState
 from app.models.decision import CreditAnalysisResult, Evidence
-from app.services.credit_bureau import fetch_credit_report
+from app.services.credit_bureau import SOURCE_LABELS, resolve_bureau_data
 
 
 def credit_node(state: UnderwritingState) -> dict[str, Any]:
@@ -56,10 +56,11 @@ def credit_node(state: UnderwritingState) -> dict[str, Any]:
         )
         return {"credit_analysis": result.model_dump(), "errors": errors}
 
-    # TODO: replace with a real credit bureau API call. state["credit_bureau_data"]
-    # is an optional override so tests/integrations can supply real or
-    # synthetic bureau data without touching the stub.
-    bureau_data = state.get("credit_bureau_data") or fetch_credit_report(application_id)
+    # state["credit_bureau_data"] is an optional override (declared score,
+    # demo fixture, or a real pull made upstream). Otherwise resolve_bureau_data
+    # tries the real bureau and falls back to the simulated stub.
+    bureau_data = state.get("credit_bureau_data") or resolve_bureau_data(application_id)
+    bureau_source = bureau_data.get("source", "provided")
 
     assumed_rate = get_credit_config()["foir"]["assumed_annual_interest_rate_percent"]
     proposed_emi = calculate_emi(loan_amount, assumed_rate, tenure_months)
@@ -103,7 +104,7 @@ def credit_node(state: UnderwritingState) -> dict[str, Any]:
         preliminary_decision=preliminary_decision,
         flags=flags,
         evidence=[
-            Evidence(agent="credit", field="cibil_score", value=cibil_score, source="credit_bureau"),
+            Evidence(agent="credit", field="cibil_score", value=cibil_score, source=f"credit_bureau:{bureau_source}"),
             Evidence(agent="credit", field="foir", value=foir_for_model, source="app.credit.foir"),
             Evidence(agent="credit", field="ltv", value=ltv_for_model, source="app.credit.ltv"),
         ],
@@ -115,6 +116,8 @@ def credit_node(state: UnderwritingState) -> dict[str, Any]:
             "declared_existing_emis": declared_existing_emis,
             "foir_threshold": foir_threshold,
             "assumed_annual_interest_rate_percent": assumed_rate,
+            "bureau_source": bureau_source,
+            "bureau_source_label": SOURCE_LABELS.get(bureau_source, "Bureau data supplied by caller"),
         },
     )
 
