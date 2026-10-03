@@ -91,6 +91,18 @@ DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
         },
         "bureau": _CLEAN_BUREAU,
     },
+    "correctable_pan_error": {
+        "label": "Correctable PAN error (HITL demo)",
+        "description": "Clean borrower, but the PAN card has a malformed PAN number. "
+                        "Blocks approval until a reviewer corrects the PAN number field and reruns.",
+        "generator": "correctable_pan_error",
+        "profile": {
+            "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
+            "loan_amount": 5_000_000, "loan_tenure_months": 240,
+            "property_value": 7_500_000, "existing_debt": 15000,
+        },
+        "bureau": _CLEAN_BUREAU,
+    },
 }
 
 

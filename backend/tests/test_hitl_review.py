@@ -141,6 +141,27 @@ def test_an_invalid_override_flips_a_clean_approval_to_suspend():
     assert rerun["decision"]["decision"] != "APPROVE"
 
 
+def test_correctable_pan_error_demo_scenario_approves_after_fix():
+    """The dedicated demo scenario for showing document correction live:
+    baseline run is blocked by a malformed PAN number; correcting just
+    that field and rerunning approves it."""
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS):
+        r = client.post("/api/v1/underwriting/run", data={"demo_scenario": "correctable_pan_error"})
+    assert r.status_code == 200, r.text
+    view = r.json()
+    assert view["decision"]["decision"] != "APPROVE"
+
+    doc = _pan_doc(view)
+    put = client.put(
+        f"/api/v1/applications/{view['id']}/documents/{doc['id']}/parsed",
+        json={"overrides": {"pan_number": "ABCPS1234F"}},
+    )
+    assert put.status_code == 200
+
+    rerun = _rerun(view["id"]).json()
+    assert rerun["decision"]["decision"] == "APPROVE"
+
+
 def test_rerun_persists_the_original_bureau_data_unchanged():
     """A rerun should isolate the document correction - it must not also
     silently roll a new simulated credit score under a new application id."""

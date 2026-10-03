@@ -99,10 +99,15 @@ def run_full_pipeline(
         scenario = DEMO_SCENARIOS.get(demo_scenario)
         if scenario is None:
             raise HTTPException(400, f"Unknown demo scenario '{demo_scenario}'. Valid: {list(DEMO_SCENARIOS)}")
-        from tests.mock_data.generate_docs import generate_all_mock_scenarios, generate_image_demo_documents
+        from tests.mock_data.generate_docs import (
+            generate_all_mock_scenarios, generate_correctable_pan_scenario, generate_image_demo_documents,
+        )
 
-        if scenario.get("generator") == "image_demo":
+        generator = scenario.get("generator")
+        if generator == "image_demo":
             raw_paths = generate_image_demo_documents()
+        elif generator == "correctable_pan_error":
+            raw_paths = generate_correctable_pan_scenario()
         else:
             raw_paths = generate_all_mock_scenarios()[scenario["key"]]
         paths, file_names = materialize_image_paths(raw_paths)

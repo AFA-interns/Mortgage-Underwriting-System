@@ -816,6 +816,48 @@ def generate_image_demo_documents(base_dir: str = "mock_documents") -> List[str]
     return [pan_path, aadhaar_path] + other_pdfs
 
 
+def generate_correctable_pan_scenario(base_dir: str = "mock_documents") -> List[str]:
+    """Same clean-prime borrower (Aarav Sharma), but the PAN card was
+    scanned/entered with a malformed PAN number ("NOT-A-VALID-PAN" instead
+    of "ABCPS1234F"). Every other document is identical to the clean-prime
+    scenario, which reaches APPROVE on its own.
+
+    A malformed PAN fails app.document_ingestion.validators' format check
+    (ERROR severity) and blocks approval. A reviewer corrects just the PAN
+    card's `pan_number` field (HITL override) and reruns - with that one
+    field fixed, validation passes and the application approves. Demonstrates
+    the document-correction workflow end to end."""
+    clean = generate_all_mock_scenarios(base_dir)["clean_prime"]
+
+    s6_dir = os.path.join(base_dir, "scenario_6_correctable_pan_error")
+    os.makedirs(s6_dir, exist_ok=True)
+
+    pan_p = os.path.join(s6_dir, "pan_card_aarav_sharma.pdf")
+    _create_pdf_document(
+        pan_p,
+        [{
+            "title": "INCOME TAX DEPARTMENT - GOVT. OF INDIA",
+            "subtitle": "Permanent Account Number Card (PAN)",
+            "sections": [
+                {
+                    "heading": "Taxpayer Information",
+                    "items": [
+                        ("Permanent Account Number", "NOT-A-VALID-PAN"),
+                        ("Name", "Aarav Sharma"),
+                        ("Father's Name", "Ramesh Sharma"),
+                        ("Date of Birth", "14/08/1990"),
+                        ("Signature", "Aarav Sharma (Verified Digital Signature)")
+                    ]
+                }
+            ],
+            "footer": "Income Tax Department, Government of India - Computer Generated Record"
+        }]
+    )
+
+    other_files = [p for p in clean if "pan_card" not in p]
+    return [pan_p] + other_files
+
+
 if __name__ == "__main__":
     generated = generate_all_mock_scenarios()
     print("Successfully generated all mock Indian mortgage document suites:")
