@@ -10,6 +10,10 @@ class UnderwritingState(TypedDict, total=False):
     borrower_profile: dict[str, Any]
     documents: list[dict[str, Any]]
     raw_document_paths: list[str]
+    # Human-review corrections to apply after extraction, before validation.
+    # Keyed by the matching entry in raw_document_paths. See
+    # app.document_ingestion.field_overrides.
+    field_overrides: dict[str, dict[str, Any]]
 
     document_analysis: dict[str, Any]
     doc_ingestion_output: dict[str, Any]

@@ -61,3 +61,28 @@ def test_postgres_store_round_trip():
     assert store.get_document(app_id, "d" * 32) == ("a.pdf", b"%PDF-1")
     assert store.resolve_review_item(f"RV-{app_id}-1")["status"] == "Resolved"
     assert store.get(app_id)["review_items"][0]["status"] == "Resolved"
+
+
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="set TEST_DATABASE_URL to run against PostgreSQL")
+def test_postgres_store_parsed_fields_and_overrides_round_trip():
+    from app.services.db import PostgresApplicationStore
+
+    store = PostgresApplicationStore(os.environ["TEST_DATABASE_URL"])
+    app_id = store.next_id()
+    store.save({
+        "id": app_id, "borrower": "T", "status": "Needs Review", "source": "test",
+        "processing_seconds": 0.1, "created_at": "2026-01-01T00:00:00+00:00",
+        "decision": {}, "review_items": [],
+    })
+    doc_id = "e" * 32
+    store.save_documents(app_id, [{"id": doc_id, "filename": "pan.pdf", "type": "PAN_CARD", "content": b"%PDF-1"}])
+
+    assert store.get_parsed_fields(app_id, doc_id) is None
+    parsed = {"doc_type": "PAN_CARD", "fields": {"pan_number": "ABCPS1234F", "full_name": "Test User"}}
+    store.save_parsed_fields(app_id, doc_id, parsed)
+    assert store.get_parsed_fields(app_id, doc_id) == parsed
+
+    assert store.get_override(app_id, doc_id) is None
+    assert store.save_override(app_id, doc_id, {"pan_number": "ZZZZZ9999Z"}) is True
+    assert store.get_override(app_id, doc_id) == {"pan_number": "ZZZZZ9999Z"}
+    assert store.save_override("some-other-app", doc_id, {"x": "y"}) is False

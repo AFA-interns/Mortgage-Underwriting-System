@@ -9,7 +9,19 @@ Generates realistic Indian mortgage test document packages (PDF format) using Py
 
 import os
 import fitz  # PyMuPDF
+from datetime import date
 from typing import Dict, List, Any, Optional
+
+
+def _recent_month_year(months_ago: int) -> str:
+    """'June 2026'-style label for the month `months_ago` months before
+    today, so the bundled payslips always pass the recency check (last 3
+    months) regardless of when this generator is run."""
+    today = date.today()
+    month_index = today.month - 1 - months_ago  # 0-based, can go negative
+    year = today.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, 1).strftime("%B %Y")
 
 
 def _create_pdf_document(output_path: str, pages_content: List[Dict[str, Any]] = None):
@@ -154,7 +166,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
     s1_files.append(aadhaar_p)
 
     # 3. Salary Slips
-    for month in ["April 2026", "May 2026", "June 2026"]:
+    for month in [_recent_month_year(2), _recent_month_year(1), _recent_month_year(0)]:
 
         month_fn = month.lower().replace(" ", "_")
 
@@ -488,7 +500,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         p_sal,
         [{
             "title": "INFOSYS LIMITED",
-            "subtitle": "Payslip for June 2026",
+            "subtitle": f"Payslip for {_recent_month_year(0)}",
             "sections": [
                 {
                     "heading": "Employee Earnings",
@@ -555,7 +567,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         v_sal,
         [{
             "title": "APEX RETAIL SOLUTIONS PVT LTD",
-            "subtitle": "Payslip for June 2026",
+            "subtitle": f"Payslip for {_recent_month_year(0)}",
             "sections": [
                 {
                     "heading": "Salary Computation",
@@ -680,7 +692,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         r_sal,
         [{
             "title": "WIPRO LIMITED",
-            "subtitle": "Payslip for June 2026",
+            "subtitle": f"Payslip for {_recent_month_year(0)}",
             "sections": [
                 {
                     "heading": "Employee Earnings",

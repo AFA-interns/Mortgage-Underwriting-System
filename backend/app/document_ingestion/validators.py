@@ -158,6 +158,65 @@ class IndianDocumentValidators:
         return ValidationResult(True, "salary_math", "Salary arithmetic perfectly reconciled (Gross = Net + Deductions).", "INFO")
 
     # -------------------------------------------------------------
+    # 4b. Payslip Recency Validation
+    # -------------------------------------------------------------
+    _MONTH_YEAR_FORMATS = (
+        "%B %Y", "%B-%Y", "%B,%Y", "%B, %Y", "%b %Y", "%b-%Y", "%b,%Y",
+        "%m/%Y", "%m-%Y", "%Y-%m", "%Y/%m",
+    )
+
+    @classmethod
+    def parse_month_year(cls, month_year: Optional[str]) -> Optional[date]:
+        """Parses the loose 'month_year' string extractors produce (e.g.
+        'June 2026', 'June-2026', '06/2026') into the first day of that
+        month. Returns None if it can't be parsed."""
+        if not month_year:
+            return None
+        cleaned = re.sub(r"\s+", " ", month_year.strip())
+        for fmt in cls._MONTH_YEAR_FORMATS:
+            try:
+                return datetime.strptime(cleaned, fmt).date().replace(day=1)
+            except ValueError:
+                continue
+        return None
+
+    @classmethod
+    def validate_payslip_recency(
+        cls,
+        month_year: Optional[str],
+        window_months: int = 3,
+        as_of: Optional[date] = None,
+    ) -> ValidationResult:
+        """A payslip is acceptable when it is dated within `window_months`
+        months before `as_of` (defaults to today, matching
+        validate_applicant_age's convention), inclusive, and not dated in
+        the future."""
+        if not month_year:
+            return ValidationResult(False, "payslip_recency", "Payslip month/year was not found on the document.", "WARNING")
+
+        parsed = cls.parse_month_year(month_year)
+        if parsed is None:
+            return ValidationResult(False, "payslip_recency", f"Could not parse payslip date: '{month_year}'.", "WARNING")
+
+        reference = as_of or date.today()
+        months_old = (reference.year - parsed.year) * 12 + (reference.month - parsed.month)
+
+        if months_old < 0:
+            return ValidationResult(
+                False, "payslip_recency",
+                f"Payslip for {month_year} is dated in the future relative to today ({reference.isoformat()}).",
+                "WARNING",
+            )
+        if months_old > window_months:
+            return ValidationResult(
+                False, "payslip_recency",
+                f"Payslip for {month_year} is {months_old} months old, outside the required "
+                f"last-{window_months}-months window.",
+                "WARNING",
+            )
+        return ValidationResult(True, "payslip_recency", f"Payslip for {month_year} is within the last {window_months} months.", "INFO")
+
+    # -------------------------------------------------------------
     # 5. Form 16 / Tax Assessment Year Validation
     # -------------------------------------------------------------
     @classmethod

@@ -56,14 +56,16 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 
 **7-Step Pipeline:**
 1. **Classification** — Multi-signal pattern scoring for Indian mortgage docs (PAN, Aadhaar, Salary Slip, Form 16, ITR, Bank Statement, Property Deed)
-2. **Preprocessing** — PyMuPDF text/layout extraction, table detection
+2. **Preprocessing** — PyMuPDF text/layout extraction, table detection. **JPG/PNG uploads** are converted to a one-page PDF (Pillow) first; any PDF page with no text layer (a converted image, or a scanned PDF) is then OCR'd with Tesseract (`app/services/ocr.py`) — optional, degrades to low-confidence/human-review if Tesseract isn't installed, never crashes
 3. **Structured Extraction** — Pydantic entities with field-level provenance
-4. **Validation** — PAN checksum, Aadhaar Verhoeff, IFSC, salary arithmetic
+4. **Validation** — PAN checksum, Aadhaar Verhoeff, IFSC, salary arithmetic, **payslip recency** (must be dated within the last 3 months by default — configurable in `config/document_ingestion_config.yaml`)
 5. **Cross-Document Reconciliation** — Fuzzy name matching, income vs bank credits, employer consistency, address verification
 6. **Confidence Scoring** — Multi-dimensional breakdown, mandatory document checklist
 7. **HITL Routing** — Human review triggers based on confidence thresholds
 
 **Key Models:** `BorrowerKYCProfile`, `BorrowerIncomeProfile`, `BorrowerLiabilitiesProfile`, `PropertyProfile`
+
+**Human-in-the-loop review** (`app/document_ingestion/field_overrides.py`): each document's extracted fields are kept (`DocumentIngestionOutput.parsed_entities`, persisted per document). A reviewer can see what was extracted, correct a field extraction got wrong (PAN mis-OCR'd, a typo, ...), and re-run — the correction is applied right after extraction and before validation, so it flows into validation, reconciliation, confidence and every downstream agent exactly as if extraction had gotten it right. Only a closed whitelist of scalar fields per document type is editable; corrections are stored against the original application and only take effect on `/rerun`, which produces a **new** application (linked via `revised_from`) — the original is never modified.
 
 ---
 
@@ -146,7 +148,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Geocoding | geopy (Nominatim) |
 | Data | pandas (comparables CSV), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (156 tests) |
+| Testing | pytest (193 tests) |
 | Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
@@ -167,7 +169,8 @@ mortgage-underwriting-system/
 │   │   │   ├── risk_engine.py, confidence.py, finalizer.py, report_writer.py
 │   │   ├── document_ingestion/         # 7-step ingestion pipeline
 │   │   │   ├── agent.py, classifier.py, extractors.py, validators.py
-│   │   │   ├── reconciliation.py, confidence.py, preprocessor.py
+│   │   │   ├── reconciliation.py, confidence.py, preprocessor.py, config.py
+│   │   │   ├── image_to_pdf.py (JPG/PNG → PDF), field_overrides.py (HITL review)
 │   │   ├── compliance/                 # KYC, identity, PMLA, RBI, NHB, RERA rules + engine
 │   │   ├── graph/
 │   │   │   ├── nodes/                  # LangGraph nodes
@@ -179,11 +182,11 @@ mortgage-underwriting-system/
 │   │   │   └── property_valuation.py
 │   │   ├── tools/                      # Shared utilities
 │   │   │   ├── external_api.py (AVnester valuation), geocoder.py
-│   │   ├── services/credit_bureau.py   # Stub (replace with real API)
+│   │   ├── services/credit_bureau.py, ocr.py (Tesseract), db.py, llm.py
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
-│   ├── config/                         # risk_, credit_, compliance_config.yaml
-│   ├── tests/                          # 156 tests (unit + e2e)
+│   ├── config/                         # risk_, credit_, compliance_, document_ingestion_config.yaml
+│   ├── tests/                          # 193 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -195,7 +198,7 @@ mortgage-underwriting-system/
 
 ## ⚙️ Environment
 
-Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key. **Local LLM:** with [Ollama](https://ollama.com) running (`ollama pull llama3.2`), `LLM_PROVIDER=ollama` makes the compliance and property agents write their explanations with it (a run then takes ~5-15 s instead of ~1 s). Set `LLM_PROVIDER=none` to always use the fixed templates. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review.
+Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key. **Local LLM:** with [Ollama](https://ollama.com) running (`ollama pull llama3.2`), `LLM_PROVIDER=ollama` makes the compliance and property agents write their explanations with it (a run then takes ~5-15 s instead of ~1 s). Set `LLM_PROVIDER=none` to always use the fixed templates. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review. **OCR (JPG/PNG uploads, scanned PDFs):** install [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) and, if it isn't on PATH, set `TESSERACT_CMD` to its full path. Without it, image uploads still convert to PDF and store fine — they just extract no text, same as an unreadable document.
 
 ---
 
@@ -228,7 +231,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 156 tests pass
+pytest tests/ -v           # 193 tests pass
 python smoke_test_pipeline.py  # Full pipeline on the 4 mock-document scenarios (prints each result)
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -255,7 +258,7 @@ Start the backend first (`uvicorn app.main:app --port 8000`).
 ## 🖥️ Running the full stack
 
 ```bash
-cd backend  && .env\Scripts\python.exe -m uvicorn app.main:app --port 8000
+cd backend  && .\venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 cd frontend && npx pnpm@10 dev          # http://localhost:3000
 ```
 
@@ -268,6 +271,9 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 | POST | `/api/v1/underwriting/run` | **Full pipeline from uploaded PDFs** (multipart) or `demo_scenario` |
 | GET | `/api/v1/applications`, `/api/v1/applications/{id}` | Stored results (agents, report, review items) |
 | GET | `/api/v1/applications/{id}/documents/{doc_id}` | Stored source PDF (inline) |
+| GET | `/api/v1/applications/{id}/documents/{doc_id}/parsed` | Extracted fields + overrides + the whitelist of editable fields |
+| PUT | `/api/v1/applications/{id}/documents/{doc_id}/parsed` | Save reviewer corrections (`{"overrides": {field: value}}`) |
+| POST | `/api/v1/applications/{id}/rerun` | Re-run the pipeline with saved corrections applied → a new, linked application |
 | GET/POST | `/api/v1/review-items`, `/api/v1/review-items/{id}/resolve` | Human-review queue |
 | GET | `/api/v1/demo-scenarios` | Bundled demo borrowers |
 | POST | `/underwriting/{application_id}/run` | Execute full pipeline (server-side file paths) |
@@ -304,7 +310,11 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 | E2E Pipeline (APPROVE, DENY, SUSPEND, Compliance Gate) | 8 | 100% |
 | Compliance (6 rule modules, scoring, crew, node) | 43 | 100% |
 | Pipeline regressions (graph, AVnester valuation, compliance mapping, scenario 1 APPROVE) | 10 | 100% |
-| **Total** | **156** | **100%** |
+| Storage (stored documents, PostgreSQL round-trip) | 5 | 100% |
+| Payslip recency (last-3-months validation) | 10 | 100% |
+| Image upload (JPG/PNG → PDF, OCR fallback) | 6 | 100% |
+| Human-in-the-loop review (view/edit/rerun with corrections) | 14 | 100% |
+| **Total** | **193** | **100%** |
 
 ---
 

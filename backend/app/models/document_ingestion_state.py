@@ -184,6 +184,13 @@ class DocumentIngestionOutput(BaseModel):
     # Audit Trail Log
     audit_log: List[str] = Field(default_factory=list)
 
+    # Per-document extracted fields, keyed by the on-disk filename used for
+    # this run (matches docs_metadata[].original_filename). Lets a human
+    # reviewer see and correct what each document extracted - see
+    # app.document_ingestion.field_overrides. Excludes `provenance`
+    # (internal) and any list/dict-typed fields (not reviewer-editable).
+    parsed_entities: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
 
 # -------------------------------------------------------------
 # Full Multi-Agent LangGraph Shared State Definition
