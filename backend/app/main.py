@@ -522,6 +522,8 @@ async def resume_valuation(thread_id: str, req: ResumeRequest):
 
 
 def _build_valuation_response(state_dict) -> dict:
+    value_source = state_dict.get("value_source", "avnester")
+    source_label = "Local comparables database" if value_source == "local_db" else "AVnester"
     return {
         "estimated_market_value_inr": state_dict.get("final_value", {}).get("estimated_market_value_inr", 0),
         "valuation_range_inr": state_dict.get("final_value", {}).get("valuation_range_inr", {"low": 0, "high": 0}),
@@ -533,8 +535,9 @@ def _build_valuation_response(state_dict) -> dict:
         "confidence_label": state_dict.get("confidence", {}).get("label", "UNKNOWN"),
         "risk_flags": state_dict.get("risk_flags", []),
         "human_review_required": state_dict.get("human_review_required", False),
-        "method": ["comparable_sales", "avnester"],
-        "sources": ["Nominatim Geocoder", "AVnester"],
+        "value_source": value_source,
+        "method": ["comparable_sales", value_source],
+        "sources": ["Nominatim Geocoder", source_label],
         "explanation": state_dict.get("explanation", ""),
     }
 

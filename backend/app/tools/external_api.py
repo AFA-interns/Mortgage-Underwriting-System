@@ -51,16 +51,25 @@ def _usable(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _search(filters: dict[str, Any]) -> list[dict[str, Any]]:
+def _search(filters: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Returns (usable listings, response metadata). Metadata is kept even
+    when there are no usable listings - `supported`/`scope_message` explain
+    *why* (e.g. "AVnester only covers Tamil Nadu"), which is worth surfacing
+    to a reviewer instead of a bare zero."""
     try:
         response = search_properties(filters)
     except Exception as exc:  # network error, timeout, non-2xx, bad JSON
         logger.warning("AVnester call failed: %s", exc)
-        return []
-    return _usable(response.get("listings", []))
+        return [], {}
+    meta = {
+        "supported": response.get("supported", True),
+        "scope_message": response.get("scopeMessage", ""),
+        "supported_cities": response.get("supportedCities", []),
+    }
+    return _usable(response.get("listings", [])), meta
 
 
-def _empty() -> dict[str, Any]:
+def _empty(meta: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "api_name": "AVnester",
         "estimated_market_value_inr": 0,
@@ -69,6 +78,7 @@ def _empty() -> dict[str, Any]:
         "api_confidence_score": 0,
         "comparables": [],
         "scope": None,
+        **(meta or {}),
     }
 
 
@@ -95,13 +105,13 @@ def fetch_api_valuation(
         base["propertyType"] = avn_type
 
     scope = "locality"
-    listings = _search({**base, "locality": locality}) if locality else []
+    listings, meta = _search({**base, "locality": locality}) if locality else ([], {})
     if len(listings) < _MIN_LOCALITY_COMPS:
         scope = "city"
-        listings = _search(base)
+        listings, meta = _search(base)
 
     if not listings or not area_sqft or area_sqft <= 0:
-        return _empty()
+        return _empty(meta)
 
     median_ppsf = statistics.median(i["price_per_sqft_inr"] for i in listings)
     estimated = median_ppsf * area_sqft
@@ -119,4 +129,5 @@ def fetch_api_valuation(
         "api_confidence_score": round(confidence, 2),
         "comparables": listings,
         "scope": scope,
+        **meta,
     }

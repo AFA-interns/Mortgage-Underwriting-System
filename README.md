@@ -89,9 +89,9 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 **Input:** Property data from `doc_ingestion_output.property_profile`  
 **Output:** `property_analysis` (dict)
 
-**Pipeline:** Geocode → AVnester live listings → Median ₹/sqft × area → Confidence → Explain  
-**Sources:** Nominatim geocoder and the live [AVnester](https://www.avnester.com) public API (no key needed). There is no local/dummy data.  
-**Behaviour:** searches the subject's locality first and widens to the whole city when fewer than 3 usable comparables exist (confidence −0.10). Supports `apartment`, `villa`, `independent_house` and `plot`. **AVnester only covers Tamil Nadu**, and its for-sale inventory is currently mostly plots, so anything else (or an AVnester outage) yields valuation 0 / confidence 0 and a SUSPEND for human review.
+**Pipeline:** Geocode → AVnester live listings (fallback: local comparables database) → Median ₹/sqft × area → Confidence → Explain  
+**Sources:** Nominatim geocoder, the live [AVnester](https://www.avnester.com) public API (no key needed, Tamil Nadu only) as the primary source, and a local PostgreSQL `property_listings` table (`app/services/property_db.py`, `app/tools/local_comparables.py`) populated by a separate Square Yards scraper (`property_data/`, run manually via `scripts/ingest_squareyards.py`) as the fallback source for everywhere else. There is no hand-written dummy data — both sources are either live or scraped-and-stored real listings.  
+**Behaviour:** tries AVnester first, searching the subject's locality then widening to the whole city when fewer than 3 usable comparables exist (confidence −0.10). If AVnester has nothing usable (wrong state, API outage, or thin inventory), falls back to the local comparables database with the same locality→city widening, at a slightly lower confidence (0.65 locality / 0.55 city) and a risk flag explaining the fallback. Supports `apartment`, `villa`, `independent_house` and `plot`. **AVnester only covers Tamil Nadu**, and its for-sale inventory is currently mostly plots; when the local database also has nothing for that location, valuation is 0 / confidence 0 and a SUSPEND for human review. The response's `value_source` field (`"avnester"` or `"local_db"`) and `sources` list report which source actually produced the estimate.
 
 ---
 
@@ -146,9 +146,9 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | PDF Processing | PyMuPDF (fitz), pdfplumber |
 | NLP/Extraction | Regex + deterministic parsers |
 | Geocoding | geopy (Nominatim) |
-| Data | pandas (comparables CSV), rapidfuzz (identity matching) |
+| Data | SQLAlchemy + psycopg (PostgreSQL: applications, local comparables), BeautifulSoup4 + httpx (Square Yards scraper), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (194 tests) |
+| Testing | pytest (223 tests) |
 | Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
@@ -181,12 +181,16 @@ mortgage-underwriting-system/
 │   │   │   ├── decision.py, document_ingestion.py, document_ingestion_state.py
 │   │   │   └── property_valuation.py
 │   │   ├── tools/                      # Shared utilities
-│   │   │   ├── external_api.py (AVnester valuation), geocoder.py
-│   │   ├── services/credit_bureau.py, ocr.py (Tesseract), db.py, llm.py
+│   │   │   ├── external_api.py (AVnester valuation), local_comparables.py (local-DB fallback), geocoder.py
+│   │   ├── services/credit_bureau.py, ocr.py (Tesseract), db.py, llm.py, property_db.py (local listings table)
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
+│   ├── property_data/                  # Square Yards scraper (async) + cleaners, standalone - not imported by main.py
+│   │   ├── scrapers/ (base_scraper.py, squareyards_scraper.py, demo_scraper.py)
+│   │   ├── cleaners/property_cleaner.py, pipeline.py, valuation.py
+│   ├── scripts/ingest_squareyards.py   # One-off CLI: scrape -> clean -> property_db.save_listings
 │   ├── config/                         # risk_, credit_, compliance_, document_ingestion_config.yaml
-│   ├── tests/                          # 194 tests (unit + e2e)
+│   ├── tests/                          # 223 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -206,6 +210,8 @@ Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup).
 
 Set `DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/mortgage_uw` in `backend/.env`. On startup the backend creates the database (if missing) and these tables: `applications` (full result as JSONB), `review_items`, and `documents` (the uploaded PDFs, so a human reviewer can open them from the UI). `GET /health` reports `"storage": "postgres"` or `"memory"`. With `DATABASE_URL` empty, or if Postgres is unreachable, the app falls back to in-memory storage and logs an error. Tests always use memory; run the Postgres round-trip test with `TEST_DATABASE_URL` pointing at a throwaway database.
 
+The same `DATABASE_URL` also backs a `property_listings` table (`app/services/property_db.py`), created on first use, independent of the `applications` store above. It's populated by scraping public listing sites (`backend/scripts/ingest_squareyards.py`, run manually — not part of request serving) and read by `app/tools/local_comparables.py` as the property agent's fallback valuation source when AVnester has nothing usable. With no `DATABASE_URL`, that fallback is simply unavailable (AVnester-only).
+
 ---
 
 ## 🧠 Do the agents need an LLM?
@@ -216,7 +222,7 @@ Set `DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/mortgage_uw` in `bac
 |-------|--------------|------|
 | Document Ingestion | Regex / rule-based extraction, validators and reconciliation | Never |
 | Credit | Rules for CIBIL band, FOIR, LTV, red flags, then a composite score; fixed explanation text | Never |
-| Property | Live AVnester listings → median ₹/sq ft × area; confidence from comparable count | Optional: only the 2-3 sentence explanation |
+| Property | Live AVnester listings (fallback: local comparables database) → median ₹/sq ft × area; confidence from comparable count | Optional: only the 2-3 sentence explanation |
 | Compliance | Deterministic rules engine (KYC, identity, PMLA, RBI, NHB, RERA) | Optional: only the explanation |
 | Decision | 6-component weighted risk engine, contradiction checks, hard safety gates; rule-based crew and report | Never (must stay repeatable and auditable) |
 
@@ -231,7 +237,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 194 tests pass
+pytest tests/ -v           # 223 tests pass
 python smoke_test_pipeline.py  # Full pipeline on the 4 mock-document scenarios (prints each result)
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -317,8 +323,9 @@ In the UI, **New application** accepts real PDFs/JPGs/PNGs (or one of five demo 
 | Storage (stored documents, PostgreSQL round-trip) | 5 | 100% |
 | Payslip recency (last-3-months validation) | 10 | 100% |
 | Image upload (JPG/PNG → PDF, OCR fallback, image demo scenario) | 9 | 100% |
-| Human-in-the-loop review (view/edit/rerun with corrections) | 14 | 100% |
-| **Total** | **194** | **100%** |
+| Human-in-the-loop review (view/edit/rerun with corrections, correctable-PAN-error demo) | 15 | 100% |
+| Local comparables (property DB, local-valuation fallback, Square Yards cleaners) | 28 | 100% |
+| **Total** | **223** | **100%** |
 
 ---
 
@@ -330,7 +337,7 @@ In the UI, **New application** accepts real PDFs/JPGs/PNGs (or one of five demo 
 4. **Transformation Node** — Bridges `doc_ingestion_output` → `document_analysis` format
 5. **Hard Safety Gates** — Decision finalizer overrides any crew recommendation
 6. **Evidence Provenance** — Every field traces back to source agent/document
-6. **Test Fixtures** — 5 realistic Indian mortgage scenarios (clean prime: Coimbatore residential plot priced live from AVnester; name discrepancy; salary discrepancy; missing docs; scanned/photographed documents)
+6. **Test Fixtures** — 5 realistic Indian mortgage scenarios (clean prime: Coimbatore residential plot priced live from AVnester; name discrepancy; salary discrepancy; missing docs; scanned/photographed documents), plus a dedicated HITL demo scenario (correctable PAN error) showing a document correction flip a blocked application to APPROVE
 
 ---
 

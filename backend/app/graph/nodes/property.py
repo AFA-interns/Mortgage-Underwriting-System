@@ -1,6 +1,7 @@
 from app.services.llm import explain
 from app.tools.geocoder import geocode_address
 from app.tools.external_api import fetch_api_valuation
+from app.tools.local_comparables import fetch_local_valuation
 from app.graph.property_state import AgentState
 
 
@@ -33,13 +34,34 @@ def api_valuation_node(state: AgentState) -> AgentState:
 def reconcile_node(state: AgentState) -> AgentState:
     comps = state.get("candidate_comps", [])
     api_val = state.get("api_valuation", {})
+    prop = state.get("property", {})
 
     risk_flags = []
+    value_source = "avnester"
 
-    if not comps:
-        risk_flags.append("No comparable AVnester listings found.")
+    if not api_val.get("supported", True) and api_val.get("scope_message"):
+        risk_flags.append(api_val["scope_message"])
 
     api_est = api_val.get("estimated_market_value_inr", 0)
+
+    if api_est <= 0:
+        # AVnester has nothing usable - fall back to the locally stored
+        # comparables database (scraped listings; see app.tools.local_comparables).
+        local_val = fetch_local_valuation(
+            locality=prop.get("locality", ""), city=prop.get("city", ""),
+            bhk=prop.get("bhk"), area_sqft=prop.get("area_sqft", 0),
+        )
+        if local_val.get("estimated_market_value_inr", 0) > 0:
+            value_source = "local_db"
+            api_val = {**local_val, "api_confidence_score": 0.65 if local_val.get("scope") == "locality" else 0.55}
+            comps = local_val["comparables"]
+            api_est = local_val["estimated_market_value_inr"]
+            risk_flags.append(
+                "AVnester returned no usable listings; valuation uses the "
+                "local comparables database instead."
+            )
+        else:
+            risk_flags.append("No comparable AVnester or local-database listings found.")
 
     confidence_score = api_val.get("api_confidence_score", 0) if api_est > 0 else 0
 
@@ -57,9 +79,12 @@ def reconcile_node(state: AgentState) -> AgentState:
         "confidence": {"score": round(confidence_score, 2), "label": conf_label},
         "risk_flags": risk_flags,
         "human_review_required": human_review,
+        "value_source": value_source,
+        "candidate_comps": comps,
+        "api_valuation": api_val,  # may now be the local-DB result, not AVnester's
         "final_value": {
             "estimated_market_value_inr": api_est,
-            "valuation_range_inr": api_val.get("valuation_range_inr", {})
+            "valuation_range_inr": api_val.get("valuation_range_inr", {}),
         }
     }
 
