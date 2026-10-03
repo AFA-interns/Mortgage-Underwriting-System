@@ -5,7 +5,7 @@ from typing import Any
 from app.services.avnester import search_properties
 
 
-def fetch_api_valuation(
+async def fetch_api_valuation(
     locality: str,
     city: str,
     property_type: str,
@@ -50,7 +50,9 @@ def fetch_api_valuation(
     # ---------------------------------------------------------
     # Call AVnester
     # ---------------------------------------------------------
-    response = search_properties(filters)
+    response = await search_properties(filters)
+    print("\n[AVNESTER RAW RESPONSE]")
+    print(response)
 
     # ---------------------------------------------------------
     # Read response
@@ -89,16 +91,24 @@ def fetch_api_valuation(
     if not valid_listings:
 
         return {
-            "api_name": "AVnester",
-            "estimated_market_value_inr": 0,
-            "price_per_sqft_inr": 0,
-            "valuation_range_inr": {
-                "low": 0,
-                "high": 0,
-            },
-            "api_confidence_score": 0,
-            "comparables": [],
-        }
+        "api_name": "AVnester",
+        "supported": response.get("supported", True),
+        "scope_message": response.get("scopeMessage", ""),
+        "supported_cities": response.get("supportedCities", []),
+
+        "estimated_market_value_inr": 0,
+
+        "price_per_sqft_inr": 0,
+
+        "valuation_range_inr": {
+            "low": 0,
+            "high": 0,
+        },
+
+        "api_confidence_score": 0,
+
+        "comparables": [],
+    }
 
     # ---------------------------------------------------------
     # Calculate average price per square foot
@@ -114,9 +124,7 @@ def fetch_api_valuation(
     # ---------------------------------------------------------
     # Estimate subject property value
     # ---------------------------------------------------------
-    estimated_value = (
-        average_price_per_sqft * area_sqft
-    )
+    estimated_value = average_price_per_sqft * area_sqft
 
     # ---------------------------------------------------------
     # Confidence based on number of listings
@@ -131,17 +139,12 @@ def fetch_api_valuation(
     # ---------------------------------------------------------
     return {
         "api_name": "AVnester",
-
         "estimated_market_value_inr": estimated_value,
-
         "price_per_sqft_inr": average_price_per_sqft,
-
         "valuation_range_inr": {
             "low": estimated_value * 0.90,
             "high": estimated_value * 1.10,
         },
-
         "api_confidence_score": api_confidence_score,
-
         "comparables": valid_listings,
     }

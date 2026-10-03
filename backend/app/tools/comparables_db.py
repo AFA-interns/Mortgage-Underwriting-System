@@ -1,20 +1,21 @@
-import pandas as pd
-import os
+from __future__ import annotations
 
+from typing import Any
 
-CSV_PATH = os.path.join(
-    os.path.dirname(__file__),
-    '..',
-    '..',
-    'data',
-    'dummy_properties.csv'
+from sqlalchemy import select
+
+from property_data.database.connection import (
+    AsyncSessionLocal,
+)
+
+from property_data.database.models import (
+    PropertyListingDB,
 )
 
 
-def normalize_property_type(property_type: str) -> str:
-    """
-    Convert different property-type names into a common category.
-    """
+def normalize_property_type(
+    property_type: str,
+) -> str:
 
     value = str(property_type).lower().strip()
 
@@ -35,71 +36,149 @@ def normalize_property_type(property_type: str) -> str:
     if "villa" in value:
         return "villa"
 
+    if "plot" in value:
+        return "plot"
+
     return value
 
 
-def get_comparables(
+async def get_comparables(
     locality: str,
     city: str,
     property_type: str,
     bhk: int,
-    area_sqft: float
-) -> list[dict]:
+    area_sqft: float,
+) -> list[dict[str, Any]]:
+    """
+    Get comparable properties from PostgreSQL.
 
-    if not os.path.exists(CSV_PATH):
+    Data sources currently include:
+    - Square Yards ingested listings
+    - Other property listings stored in property_listings
+    """
+
+    if not city or not locality:
         return []
 
-    df = pd.read_csv(CSV_PATH)
+    city_clean = city.strip().lower()
+    locality_clean = locality.strip().lower()
 
-    df["locality_clean"] = (
-        df["locality"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
+    property_type_clean = normalize_property_type(
+        property_type
     )
 
-    df["city_clean"] = (
-        df["city"]
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
+    async with AsyncSessionLocal() as session:
 
-    df["property_type_clean"] = (
-        df["property_type"]
-        .apply(normalize_property_type)
-    )
+        query = select(PropertyListingDB).where(
+            PropertyListingDB.city.ilike(city_clean),
+            PropertyListingDB.locality.ilike(
+                locality_clean
+            ),
+            PropertyListingDB.transaction_type == "Sale",
+        )
 
-    t_locality = locality.lower().strip()
-    t_city = city.lower().strip()
-    t_prop_type = normalize_property_type(property_type)
+        result = await session.execute(query)
 
-    mask = (
-        (df["city_clean"] == t_city)
-        & (df["locality_clean"] == t_locality)
-        & (df["property_type_clean"] == t_prop_type)
-    )
+        listings = result.scalars().all()
 
-    filtered = df[mask]
+    comparables = []
 
-    if filtered.empty:
-        return []
+    # ---------------------------------------------------------
+    # Filter and normalize PostgreSQL records
+    # ---------------------------------------------------------
 
-    # Keep properties within ±20% of subject property area.
-    min_area = area_sqft * 0.8
-    max_area = area_sqft * 1.2
+    for listing in listings:
 
-    filtered = filtered[
-        (filtered["area_sqft"] >= min_area)
-        & (filtered["area_sqft"] <= max_area)
-    ]
+        listing_type = normalize_property_type(
+            listing.property_type or ""
+        )
 
-    filtered = filtered.drop(
-        columns=[
-            "locality_clean",
-            "city_clean",
-            "property_type_clean",
-        ]
-    )
+        # Property type must match.
+        if listing_type != property_type_clean:
+            continue
 
-    return filtered.to_dict(orient="records")
+        # BHK must match when both are available.
+        if (
+            bhk is not None
+            and listing.bedrooms is not None
+            and listing.bedrooms != bhk
+        ):
+            continue
+
+        # Area should normally be within ±20%.
+        if (
+            area_sqft is not None
+            and listing.area_sqft is not None
+        ):
+
+            min_area = area_sqft * 0.80
+            max_area = area_sqft * 1.20
+
+            if not (
+                min_area
+                <= listing.area_sqft
+                <= max_area
+            ):
+                continue
+
+        # Price must be usable.
+        if (
+            listing.price is None
+            or listing.price <= 0
+        ):
+            continue
+
+        # Calculate price per sqft if not already stored.
+        price_per_sqft = listing.price_per_sqft
+
+        if (
+            price_per_sqft is None
+            and listing.area_sqft
+            and listing.area_sqft > 0
+        ):
+
+            price_per_sqft = (
+                listing.price
+                / listing.area_sqft
+            )
+
+        if price_per_sqft is None:
+            continue
+
+        comparables.append(
+            {
+                "id": listing.id,
+                "source": listing.source,
+                "source_url": listing.source_url,
+                "city": listing.city,
+                "locality": listing.locality,
+                "property_type": listing.property_type,
+                "transaction_type": (
+                    listing.transaction_type
+                ),
+                "bhk": listing.bedrooms,
+                "bathrooms": listing.bathrooms,
+                "area_sqft": listing.area_sqft,
+                "price_inr": listing.price,
+                "price_per_sqft_inr": price_per_sqft,
+                "furnishing": listing.furnishing,
+                "floor": listing.floor,
+                "total_floors": listing.total_floors,
+                "parking": listing.parking,
+            }
+        )
+
+    # ---------------------------------------------------------
+    # Sort by similarity of area
+    # ---------------------------------------------------------
+
+    if area_sqft:
+
+        comparables.sort(
+            key=lambda item: abs(
+                (item["area_sqft"] or area_sqft)
+                - area_sqft
+            )
+        )
+
+    return comparables

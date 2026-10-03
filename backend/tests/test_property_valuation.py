@@ -8,8 +8,8 @@ client = TestClient(app)
 
 def run_test():
     payload = {
-        "address": "100 Feet Road",
-        "locality": "Indiranagar",
+        "address": "Whitefield Main Road",
+        "locality": "Whitefield",
         "city": "Bangalore",
         "property_type": "Apartment",
         "bhk": 2,
