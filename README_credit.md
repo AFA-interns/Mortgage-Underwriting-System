@@ -319,7 +319,7 @@ This agent never receives, stores, prints, or logs raw PAN/Aadhaar numbers. KYC 
 
 ## What's Stubbed
 
-- **`app.services.credit_bureau.fetch_credit_report`** - returns a deterministic mock report (hash of `application_id`) so the agent runs end-to-end with zero external credentials. `# TODO: replace with a real CIBIL / Experian / Equifax / CRIF High Mark API call.`
+- **`app.services.credit_bureau.fetch_credit_report`** - returns a deterministic *simulated* report (hash of `application_id`; nothing about the borrower) tagged `source="simulated"`. Settled/written-off/DPD are always 0, so those red flags cannot trigger from it. `fetch_from_bureau` is the (unimplemented) real-bureau entry point and raises `BureauNotConfigured`; `resolve_bureau_data` tries it first and falls back to the stub. Bureau data carries a `source` (`bureau`, `applicant_declared`, `simulated`, `demo_fixture`), surfaced as `raw_data.bureau_source` and in the UI. The new-application form accepts an optional CIBIL score (300-900) and records a bureau-consent flag.
 - **`state["credit_bureau_data"]`** - an optional override on `UnderwritingState` (additive field) that bypasses the stub. Tests always set this explicitly for determinism; a future real integration can populate it the same way instead of editing the node.
 - **`assumed_annual_interest_rate_percent`** - a placeholder EMI rate (8.5%) used to estimate the proposed EMI before a real sanctioned rate is available from the product/decision layer.
 
