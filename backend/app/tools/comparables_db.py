@@ -4,19 +4,11 @@ from typing import Any
 
 from sqlalchemy import select
 
-from property_data.database.connection import (
-    AsyncSessionLocal,
-)
-
-from property_data.database.models import (
-    PropertyListingDB,
-)
+from property_data.database.connection import AsyncSessionLocal
+from property_data.database.models import PropertyListingDB
 
 
-def normalize_property_type(
-    property_type: str,
-) -> str:
-
+def normalize_property_type(property_type: str) -> str:
     value = str(property_type).lower().strip()
 
     if any(
@@ -60,28 +52,22 @@ async def get_comparables(
     if not city or not locality:
         return []
 
-    city_clean = city.strip().lower()
-    locality_clean = locality.strip().lower()
+    city_clean = city.strip()
+    locality_clean = locality.strip()
 
-    property_type_clean = normalize_property_type(
-        property_type
-    )
+    property_type_clean = normalize_property_type(property_type)
 
     async with AsyncSessionLocal() as session:
-
         query = select(PropertyListingDB).where(
             PropertyListingDB.city.ilike(city_clean),
-            PropertyListingDB.locality.ilike(
-                locality_clean
-            ),
+            PropertyListingDB.locality.ilike(locality_clean),
             PropertyListingDB.transaction_type == "Sale",
         )
 
         result = await session.execute(query)
-
         listings = result.scalars().all()
 
-    comparables = []
+    comparables: list[dict[str, Any]] = []
 
     # ---------------------------------------------------------
     # Filter and normalize PostgreSQL records
@@ -110,7 +96,6 @@ async def get_comparables(
             area_sqft is not None
             and listing.area_sqft is not None
         ):
-
             min_area = area_sqft * 0.80
             max_area = area_sqft * 1.20
 
@@ -136,7 +121,6 @@ async def get_comparables(
             and listing.area_sqft
             and listing.area_sqft > 0
         ):
-
             price_per_sqft = (
                 listing.price
                 / listing.area_sqft
@@ -153,9 +137,7 @@ async def get_comparables(
                 "city": listing.city,
                 "locality": listing.locality,
                 "property_type": listing.property_type,
-                "transaction_type": (
-                    listing.transaction_type
-                ),
+                "transaction_type": listing.transaction_type,
                 "bhk": listing.bedrooms,
                 "bathrooms": listing.bathrooms,
                 "area_sqft": listing.area_sqft,
@@ -173,7 +155,6 @@ async def get_comparables(
     # ---------------------------------------------------------
 
     if area_sqft:
-
         comparables.sort(
             key=lambda item: abs(
                 (item["area_sqft"] or area_sqft)
