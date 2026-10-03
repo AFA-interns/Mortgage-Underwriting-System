@@ -60,8 +60,8 @@ async def health() -> dict[str, str]:
 # -------------------------------------------------------
 
 from app.services.applications import (  # noqa: E402
-    DEMO_SCENARIOS, get_parsed_document, rerun_application, run_application,
-    save_document_overrides, store,
+    DEMO_SCENARIOS, get_parsed_document, materialize_image_paths, rerun_application,
+    run_application, save_document_overrides, store,
 )
 from app.services.credit_bureau import declared_score_report  # noqa: E402
 from app.document_ingestion.image_to_pdf import convert_image_to_pdf  # noqa: E402
@@ -99,13 +99,17 @@ def run_full_pipeline(
         scenario = DEMO_SCENARIOS.get(demo_scenario)
         if scenario is None:
             raise HTTPException(400, f"Unknown demo scenario '{demo_scenario}'. Valid: {list(DEMO_SCENARIOS)}")
-        from tests.mock_data.generate_docs import generate_all_mock_scenarios
+        from tests.mock_data.generate_docs import generate_all_mock_scenarios, generate_image_demo_documents
 
-        paths = generate_all_mock_scenarios()[scenario["key"]]
+        if scenario.get("generator") == "image_demo":
+            raw_paths = generate_image_demo_documents()
+        else:
+            raw_paths = generate_all_mock_scenarios()[scenario["key"]]
+        paths, file_names = materialize_image_paths(raw_paths)
         return run_application(
             profile=dict(scenario["profile"]),
             file_paths=paths,
-            file_names=[os.path.basename(p) for p in paths],
+            file_names=file_names,
             bureau=scenario["bureau"],
             source=f"demo:{demo_scenario}",
         )

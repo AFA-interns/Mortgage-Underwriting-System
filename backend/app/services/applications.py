@@ -80,6 +80,17 @@ DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
         },
         "bureau": {**_CLEAN_BUREAU, "cibil_score": 690},
     },
+    "image_upload": {
+        "label": "Scanned documents (JPG/PNG)",
+        "description": "Same clean borrower, but PAN (PNG) and Aadhaar (JPG) are uploaded as photographed images — demonstrates image → PDF conversion and OCR.",
+        "generator": "image_demo",
+        "profile": {
+            "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
+            "loan_amount": 5_000_000, "loan_tenure_months": 240,
+            "property_value": 7_500_000, "existing_debt": 15000,
+        },
+        "bureau": _CLEAN_BUREAU,
+    },
 }
 
 
@@ -432,6 +443,26 @@ def run_application(
         if d["parsed"] is not None:
             store.save_parsed_fields(app_id, d["id"], d["parsed"])
     return view
+
+
+def materialize_image_paths(paths: list[str]) -> tuple[list[str], list[str]]:
+    """Converts any .jpg/.jpeg/.png entries to PDF (same conversion the
+    upload endpoint applies) so a demo scenario that includes photographed
+    documents stores and displays exactly like a real image upload would.
+    Non-image paths pass through unchanged. Returns (file_paths, file_names).
+    """
+    from app.document_ingestion.image_to_pdf import convert_image_to_pdf
+
+    converted: list[str] = []
+    display_names: list[str] = []
+    for p in paths:
+        if p.lower().endswith((".jpg", ".jpeg", ".png")):
+            converted.append(convert_image_to_pdf(p))
+            display_names.append(os.path.splitext(os.path.basename(p))[0] + ".pdf")
+        else:
+            converted.append(p)
+            display_names.append(os.path.basename(p))
+    return converted, display_names
 
 
 def _profile_from_view(view: dict[str, Any]) -> dict[str, Any]:

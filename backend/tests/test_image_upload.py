@@ -2,10 +2,18 @@
 text layer, and run through the normal document-ingestion pipeline."""
 import os
 import tempfile
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
+
+# AVnester is a live external API; pin its result for tests that assert a
+# specific decision, so they don't depend on live data or network access.
+_STABLE_LISTINGS = {"listings": [
+    {"listingId": f"id-{i}", "title": "t", "locality": "X", "price": 3_125_000, "carpetAreaSqft": 1000}
+    for i in range(5)
+]}
 
 from app.document_ingestion.image_to_pdf import convert_image_to_pdf
 from app.document_ingestion.preprocessor import DocumentPreprocessor
@@ -104,6 +112,60 @@ def test_upload_endpoint_accepts_png_and_stores_it_as_pdf():
     assert dl.status_code == 200
     assert dl.headers["content-type"] == "application/pdf"
     assert dl.content.startswith(b"%PDF")
+
+
+@requires_tesseract
+def test_image_demo_scenario_is_listed():
+    ids = [s["id"] for s in TestClient(app).get("/api/v1/demo-scenarios").json()]
+    assert "image_upload" in ids
+
+
+@requires_tesseract
+def test_image_demo_scenario_converts_ocrs_and_approves():
+    """End-to-end: the bundled PAN (PNG) and Aadhaar (JPG) photos convert,
+    OCR cleanly, extract correctly, and the application reaches the same
+    outcome as the equivalent all-PDF clean scenario."""
+    client = TestClient(app)
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS):
+        res = client.post("/api/v1/underwriting/run", data={"demo_scenario": "image_upload"})
+    assert res.status_code == 200
+    view = res.json()
+    assert view["decision"]["decision"] == "APPROVE"
+    assert view["agents"]["compliance"]["critical_flags"] == []
+
+    pan = next(d for d in view["document_files"] if d["type"] == "PAN_CARD")
+    aadhaar = next(d for d in view["document_files"] if d["type"] == "AADHAAR_CARD")
+    assert pan["filename"].endswith(".pdf")
+    assert aadhaar["filename"].endswith(".pdf")
+
+    for doc in (pan, aadhaar):
+        dl = client.get(f"/api/v1/applications/{view['id']}/documents/{doc['id']}")
+        assert dl.status_code == 200
+        assert dl.headers["content-type"] == "application/pdf"
+        assert dl.content.startswith(b"%PDF")
+
+    pan_fields = client.get(f"/api/v1/applications/{view['id']}/documents/{pan['id']}/parsed").json()["extracted_fields"]
+    assert pan_fields["pan_number"] == "ABCPS1234F"
+    assert pan_fields["full_name"] == "Aarav Sharma"
+
+    aadhaar_fields = client.get(f"/api/v1/applications/{view['id']}/documents/{aadhaar['id']}/parsed").json()["extracted_fields"]
+    assert aadhaar_fields["aadhaar_number"] == "XXXX-XXXX-8921"
+    assert "641035" in aadhaar_fields["address"]
+
+
+def test_materialize_image_paths_converts_only_images():
+    from app.services.applications import materialize_image_paths
+
+    with tempfile.TemporaryDirectory() as tmp:
+        png_path = os.path.join(tmp, "a.png")
+        Image.new("RGB", (100, 100), "white").save(png_path)
+        pdf_path = os.path.join(tmp, "b.pdf")
+        open(pdf_path, "wb").close()
+
+        paths, names = materialize_image_paths([png_path, pdf_path])
+        assert paths[0].endswith(".pdf") and paths[0] != png_path
+        assert names[0] == "a.pdf"
+        assert paths[1] == pdf_path and names[1] == "b.pdf"
 
 
 def test_upload_endpoint_rejects_unsupported_extension():

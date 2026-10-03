@@ -714,6 +714,108 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
 
     return scenarios
 
+
+# =============================================================================
+# SCENARIO 5: Photographed / scanned documents (JPG + PNG upload demo)
+# =============================================================================
+# Proves the JPG/PNG -> PDF conversion and OCR fallback (see
+# app.document_ingestion.image_to_pdf / app.services.ocr): same borrower as
+# the clean-prime scenario, but the PAN and Aadhaar are supplied as photos
+# of the cards instead of text-layer PDFs.
+
+def _load_font(size: int):
+    """A real TrueType font OCRs far better than Pillow's tiny bitmap
+    default. Falls back gracefully if none of these are installed."""
+    from PIL import ImageFont
+
+    for candidate in (
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\calibri.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ):
+        if os.path.exists(candidate):
+            return ImageFont.truetype(candidate, size)
+    return ImageFont.load_default()
+
+
+def _create_image_document(
+    output_path: str,
+    title: str,
+    lines: List[tuple],
+    width: int = 1000,
+    height: int = 560,
+) -> str:
+    """Renders a simple card-style document (title + label/value lines) as
+    a JPG or PNG - standing in for a borrower's phone photo of a physical
+    document. Format is taken from `output_path`'s extension.
+
+    Each "Label: Value" is drawn as ONE text run on its own line rather than
+    two separately-positioned runs - a multi-column layout risks Tesseract
+    reading the columns out of row order (it reads by block, not strictly
+    top-to-bottom), which would misassign values to the wrong label.
+    """
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (width, max(height, 110 + 50 * len(lines))), "white")
+    d = ImageDraw.Draw(img)
+    full_height = img.height
+    d.rectangle([8, 8, width - 9, full_height - 9], outline=(60, 90, 130), width=3)
+
+    title_font = _load_font(26)
+    text_font = _load_font(24)
+
+    d.rectangle([8, 8, width - 9, 70], fill=(30, 58, 95))
+    d.text((28, 22), title, font=title_font, fill="white")
+
+    y = 110
+    for label, value in lines:
+        text = f"{label}: {value}" if label else str(value)
+        d.text((40, y), text, font=text_font, fill=(20, 30, 45))
+        y += 50
+
+    img.save(output_path)
+    return output_path
+
+
+def generate_image_demo_documents(base_dir: str = "mock_documents") -> List[str]:
+    """Same borrower and loan as the clean-prime scenario, but PAN
+    (PNG) and Aadhaar (JPG) are photographed/scanned images rather than
+    PDFs, so a demo run visibly exercises image -> PDF conversion + OCR."""
+    clean = generate_all_mock_scenarios(base_dir)["clean_prime"]
+    other_pdfs = [p for p in clean if "pan_card" not in p and "aadhaar_card" not in p]
+
+    img_dir = os.path.join(base_dir, "scenario_5_image_upload")
+    os.makedirs(img_dir, exist_ok=True)
+
+    pan_path = _create_image_document(
+        os.path.join(img_dir, "pan_card_aarav_sharma_photo.png"),
+        "INCOME TAX DEPARTMENT - GOVT. OF INDIA",
+        [
+            ("Permanent Account Number", "ABCPS1234F"),
+            ("Name", "Aarav Sharma"),
+            ("Father's Name", "Ramesh Sharma"),
+            ("Date of Birth", "14/08/1990"),
+        ],
+    )
+
+    aadhaar_path = _create_image_document(
+        os.path.join(img_dir, "aadhaar_card_aarav_sharma_photo.jpg"),
+        "UNIQUE IDENTIFICATION AUTHORITY OF INDIA",
+        [
+            ("Aadhaar Number", "XXXX-XXXX-8921"),
+            ("Name", "Aarav Sharma"),
+            ("Date of Birth", "14/08/1990"),
+            ("Gender", "MALE"),
+            ("Address", "Flat 402, Green Valley Apartments, Saravanampatti, Coimbatore"),
+            ("Pincode", "641035"),
+        ],
+        width=1200,
+    )
+
+    return [pan_path, aadhaar_path] + other_pdfs
+
+
 if __name__ == "__main__":
     generated = generate_all_mock_scenarios()
     print("Successfully generated all mock Indian mortgage document suites:")
