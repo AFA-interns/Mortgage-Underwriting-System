@@ -36,6 +36,7 @@ def decision_node(state: UnderwritingState) -> dict[str, Any]:
             key_risk_factors=[f"Missing required inputs: {', '.join(validated.missing_fields)}"],
             human_review_required=True,
             rationale=f"Required inputs missing: {validated.missing_fields}",
+            gate_triggered="missing_inputs",
         )
         return {
             "validation_result": validation_dict,

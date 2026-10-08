@@ -203,6 +203,7 @@ class DecisionResult(BaseModel):
     compliance_status: str = "PENDING"
     human_review_required: bool = True
     rationale: str = ""
+    gate_triggered: str | None = None
     agent_consensus: dict[str, Any] = Field(default_factory=dict)
     report_required: bool = True
     evidence: list[Evidence] = Field(default_factory=list)

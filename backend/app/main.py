@@ -6,6 +6,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from app.evaluation.evaluator import evaluate_cases, runtime_metrics_from_decisions
+from app.evaluation.schemas import LabeledCase
 from app.graph.state import UnderwritingState
 from app.graph.workflow import build_underwriting_graph
 from app.models.decision import DecisionResult
@@ -25,6 +27,10 @@ class UnderwritingRequest(BaseModel):
     credit_analysis: dict[str, Any] = {}
     property_analysis: dict[str, Any] = {}
     compliance_analysis: dict[str, Any] = {}
+
+
+class EvaluationRequest(BaseModel):
+    cases: list[LabeledCase]
 
 
 @app.get("/health")
@@ -94,3 +100,41 @@ async def get_report(application_id: str) -> dict[str, Any]:
     if not records:
         raise HTTPException(status_code=404, detail="No records found for this application")
     return {"application_id": application_id, "audit_records": records}
+
+
+@app.post("/evaluation/report")
+async def evaluation_report(request: EvaluationRequest) -> dict[str, Any]:
+    """Compute full evaluation metrics over labeled cases.
+
+    Predictions come from each case's ``predicted`` field when present,
+    otherwise from audit history matched by application_id.
+    """
+    cases = request.cases
+    for case in cases:
+        if case.predicted is not None:
+            continue
+        records = audit_store.get_by_application(case.application_id)
+        for record in reversed(records):
+            final_decision = record.get("final_decision")
+            if final_decision:
+                case.predicted = DecisionResult.model_validate(final_decision)
+                break
+    missing = [c.application_id for c in cases if c.predicted is None]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No prediction available for application_ids: {missing}",
+        )
+    report = evaluate_cases(cases)
+    return report.model_dump(mode="json")
+
+
+@app.get("/evaluation/runtime")
+async def evaluation_runtime() -> dict[str, Any]:
+    """Runtime/operational metrics over all audited decisions (no labels needed)."""
+    decisions: list[DecisionResult] = []
+    for record in audit_store.get_all():
+        final_decision = record.get("final_decision")
+        if final_decision:
+            decisions.append(DecisionResult.model_validate(final_decision))
+    return runtime_metrics_from_decisions(decisions).model_dump(mode="json")
