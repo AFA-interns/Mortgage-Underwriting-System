@@ -22,12 +22,13 @@ The Decision Agent is the final stage of the Mortgage Underwriting System — a 
 12. [Deterministic Finalizer](#deterministic-finalizer)
 13. [Report Writer](#report-writer)
 14. [FastAPI Endpoints](#fastapi-endpoints)
-15. [Configuration](#configuration)
-16. [Pydantic Models](#pydantic-models)
-17. [Audit and HITL](#audit-and-hitl)
-18. [Error Handling](#error-handling)
-19. [Tests](#tests)
-20. [Architectural Invariants](#architectural-invariants)
+15. [Evaluation](#evaluation)
+16. [Configuration](#configuration)
+17. [Pydantic Models](#pydantic-models)
+18. [Audit and HITL](#audit-and-hitl)
+19. [Error Handling](#error-handling)
+20. [Tests](#tests)
+21. [Architectural Invariants](#architectural-invariants)
 
 ---
 
@@ -94,6 +95,8 @@ Each stage stores its output back into `UnderwritingState`. If input validation 
 backend/
 ├── config/
 │   └── risk_config.yaml                # Risk weights, bands, thresholds, LLM config
+├── data/
+│   └── labeled_cases.json              # 32 synthetic labeled cases for evaluation
 ├── app/
 │   ├── main.py                         # FastAPI endpoints
 │   ├── agents/
@@ -107,6 +110,14 @@ backend/
 │   │   ├── confidence.py               # Deterministic confidence calculation
 │   │   ├── finalizer.py                # Authoritative safety gates + final decision
 │   │   └── report_writer.py            # 15-section underwriting report
+│   ├── evaluation/
+│   │   ├── schemas.py                  # LabeledCase + MetricsReport Pydantic models
+│   │   ├── loader.py                   # JSON loaders for cases/predictions
+│   │   ├── metrics.py                  # Classification/ranking/calibration/runtime metrics
+│   │   ├── evaluator.py                # evaluate_cases(), runtime_metrics_from_decisions()
+│   │   ├── runner.py                   # Deterministic (no-LLM) pipeline for offline eval
+│   │   ├── cli.py                      # python -m app.evaluation.cli
+│   │   └── synth.py                    # Regenerates data/labeled_cases.json (32 specs)
 │   ├── graph/
 │   │   ├── state.py                    # UnderwritingState TypedDict
 │   │   ├── workflow.py                 # LangGraph StateGraph definition
@@ -118,7 +129,7 @@ backend/
 │   │   └── policy_validator.py         # CrewAI tools (risk, confidence, policy)
 │   └── services/
 │       ├── audit.py                    # In-memory audit store
-│       ├── llm.py                      # LLM provider configuration
+│       ├── llm.py                      # LLM provider configuration + build_llm()
 │       └── report.py                   # Report JSON export
 └── tests/
     ├── conftest.py                     # 4 synthetic test cases
@@ -128,9 +139,11 @@ backend/
     ├── test_risk_engine.py
     ├── test_confidence.py
     ├── test_crew.py
+    ├── test_live_crew.py               # Live-LLM smoke test (RUN_LIVE_TESTS=1)
     ├── test_finalizer.py
     ├── test_report_writer.py
-    └── test_e2e_pipeline.py
+    ├── test_e2e_pipeline.py
+    └── test_evaluation.py              # Metrics, loaders, CLI, endpoints, dataset
 ```
 
 ---
@@ -453,16 +466,38 @@ Underwriter (independent) → Risk Analyst (sees UW output) → Report Writer (s
 
 All tasks require JSON output. The crew runs via `crew.kickoff()` with `Process.sequential`.
 
+### LLM Selection
+
+`run_decision_crew(..., llm=None)` builds an explicit CrewAI `LLM` via `build_llm()` in `backend/app/services/llm.py` and passes it to every agent. The selection chain is:
+
+```
+primary (google / gemini-3.6-flash)
+    → fallback (groq / llama-3.1-70b-versatile)
+    → openai (gpt-4o)
+    → CrewAI default (if no provider initializes)
+```
+
+Each candidate is attempted in order; construction failures (missing provider extra/SDK, unsupported model) are logged and skipped. Temperature and token limits come from `LLM_TEMPERATURE` / `LLM_MAX_TOKENS`.
+
+### Available Tools
+
+Located in `backend/app/tools/policy_validator.py`. All tools are **read-only** and constructed with state (JSON strings), not runtime arguments:
+
+| Tool | Attached To | Behavior |
+|---|---|---|
+| `RiskCalculatorTool` | Underwriter, Risk Analyst | Returns the pre-calculated risk assessment JSON (`risk_json`) |
+| `ConfidenceCalculatorTool` | Underwriter, Risk Analyst | Returns the pre-calculated confidence assessment JSON (`confidence_json`) |
+| `PolicyValidatorTool` | Risk Analyst | Validates a proposed APPROVE/DENY/SUSPEND against the deterministic safety gates |
+
+The policy validator receives a gate summary (`gates_json`) covering `critical_compliance`, `missing_inputs`, `unresolved_critical_contradiction`, and `below_confidence_threshold`. It returns `FAIL` when APPROVE is proposed while any gate is `true`, `PASS` otherwise. The Report Writer receives no tools.
+
+### Output Parsing
+
+`_extract_json()` tolerates markdown-fenced (```` ```json ````) and prose-embedded JSON in LLM output. If no JSON object can be extracted, the member output degrades to `CrewMemberOutput(recommendation=None, reasoning=<raw text>)` — the pipeline continues.
+
 ### Failure Handling
 
 If the crew fails (LLM error, parse error, etc.), the pipeline continues with `DecisionCrewOutput(error=...)`. The crew error does **not** trigger `SUSPEND` by itself — it is recorded in errors and the finalizer proceeds with deterministic assessment.
-
-### Available Tools (not yet attached to agents)
-
-Located in `backend/app/tools/policy_validator.py`:
-- `RiskCalculatorTool` — passthrough of pre-calculated risk JSON
-- `ConfidenceCalculatorTool` — passthrough of pre-calculated confidence JSON
-- `PolicyValidatorTool` — validates that APPROVE is not issued when safety gates require SUSPEND
 
 ---
 
@@ -474,14 +509,16 @@ The **authoritative** decision gate. The CrewAI crew **cannot** override it.
 
 ### Hard Safety Gates (evaluated in order)
 
-```
-1. Critical compliance flag present?           → SUSPEND (compliance_status="BLOCKED")
-2. Required input data missing?                → SUSPEND
-3. Unresolved critical contradiction?          → SUSPEND
-4. Confidence below threshold (< 0.85)?       → SUSPEND
-5. Material crew disagreement?                 → SUSPEND
-6. Risk calculation failed?                    → SUSPEND
-```
+| # | Gate | Result | `gate_triggered` |
+|---|---|---|---|
+| 1 | Critical compliance flag present? | SUSPEND (`compliance_status="BLOCKED"`) | `critical_compliance` |
+| 2 | Required input data missing? | SUSPEND | `missing_inputs` |
+| 3 | Unresolved critical contradiction? | SUSPEND | `contradiction` |
+| 4 | Confidence below threshold (< 0.85)? | SUSPEND | `low_confidence` |
+| 5 | Material crew disagreement? | SUSPEND | `crew_disagreement` |
+| 6 | Risk calculation failed? | SUSPEND | `risk_failure` |
+
+Every gate short-circuit sets `DecisionResult.gate_triggered` to identify which gate fired. The decision node's validation short-circuit also sets `missing_inputs` (`backend/app/graph/nodes/decision.py`), and a denial blocked by insufficient confidence sets `insufficient_confidence_for_denial`. Normal score-based outcomes (APPROVE, confident DENY, band-based SUSPEND) leave `gate_triggered = None`.
 
 ### Score-Based Finalization (only after all gates pass)
 
@@ -540,6 +577,10 @@ Generates a structured `UnderwritingReport` with 15 sections. The report **never
 | `POST` | `/underwriting/{application_id}/run` | Run full decision pipeline | `UnderwritingRequest` | `{application_id, decision, report, human_review_required}` |
 | `GET` | `/underwriting/{application_id}/decision` | Get latest decision | — | Stored `DecisionResult` dict |
 | `GET` | `/underwriting/{application_id}/report` | Get audit trail | — | `{application_id, audit_records}` |
+| `POST` | `/evaluation/report` | Compute full metrics over labeled cases | `{cases: [LabeledCase]}` | `MetricsReport` |
+| `GET` | `/evaluation/runtime` | Runtime metrics over audited decisions (no labels needed) | — | `RuntimeMetrics` |
+
+`POST /evaluation/report` resolves a prediction per case from the case's own `predicted` field when present, otherwise falls back to audit history matched by `application_id`. Returns `400` if any case has neither.
 
 ### Example Request
 
@@ -580,6 +621,80 @@ POST /underwriting/APP-001/run
 
 ---
 
+## Evaluation
+
+**Package:** `backend/app/evaluation/` · **Dataset:** `backend/data/labeled_cases.json`
+
+The evaluation subsystem measures decision quality against labeled ground truth. It supports both fully offline evaluation (deterministic pipeline, no LLM calls) and online evaluation of audited decisions.
+
+### Modules
+
+| Module | Purpose |
+|---|---|
+| `schemas.py` | `LabeledCase` (pipeline inputs + `ground_truth_decision` + optional `predicted`) and `MetricsReport` models |
+| `loader.py` | `load_labeled_cases()` / `load_predictions()` — JSON loaders accepting bare lists or wrapped objects (`cases`/`predictions` keys) |
+| `metrics.py` | Pure-Python classification, ranking, calibration, and runtime metrics |
+| `evaluator.py` | `evaluate_cases(cases)` → `MetricsReport`; `runtime_metrics_from_decisions(decisions)` → `RuntimeMetrics` |
+| `runner.py` | `run_deterministic_pipeline(case)` — validation → contradictions → risk → confidence → finalize, no crew |
+| `cli.py` | Command-line evaluation entry point |
+| `synth.py` | Generates the 32 synthetic labeled cases in `data/labeled_cases.json` |
+
+### Labeled Dataset
+
+`backend/data/labeled_cases.json` contains 32 synthetic cases with ground-truth labels assigned by design intent (independent of the model):
+
+| Label | Count |
+|---|---|
+| APPROVE | 11 |
+| DENY | 8 |
+| SUSPEND | 13 |
+
+### Prediction Resolution
+
+`evaluate_cases()` resolves a prediction per case in order:
+
+1. `case.predicted` field, if set
+2. `predictions[application_id]` mapping, if provided
+3. (API only) audit-store history matched by `application_id` — otherwise `400`
+
+### Metrics
+
+**Classification** — accuracy, balanced accuracy, macro/weighted precision-recall-F1, per-class metrics, confusion matrix, and cost-weighted error using an asymmetric cost matrix (false-approve of a DENY-labeled case costs 10; false-deny of an APPROVE-labeled case costs 2).
+
+**Ranking** — AUC-ROC (Mann-Whitney, tie-aware), KS statistic, and Gini (`2·AUC − 1`), with **DENY as the positive class** and `invert=True` because `risk_score` is a safety score (higher = safer).
+
+**Calibration** — Brier score, expected calibration error (ECE, 10 bins), and reliability bins comparing average confidence against empirical accuracy.
+
+**Runtime / operational** — decision distribution, `suspend_rate`, `auto_decision_rate`, `mean_confidence`, `below_threshold_rate` (threshold 0.85), `gate_trigger_counts`, and `crew_agreement_rate` (fraction of cases where Underwriter and Risk Analyst recommendations both exist and match; `None` when no pairs exist).
+
+### CLI
+
+```bash
+cd backend
+
+# Evaluate using the deterministic pipeline (no LLM)
+python -m app.evaluation.cli --dataset data/labeled_cases.json --use-pipeline
+
+# Evaluate using precomputed predictions
+python -m app.evaluation.cli --dataset data/labeled_cases.json --predictions preds.json
+
+# Write the full MetricsReport JSON
+python -m app.evaluation.cli --dataset data/labeled_cases.json --use-pipeline --output report.json
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--dataset PATH` | Yes | Labeled cases JSON |
+| `--predictions PATH` | No* | Precomputed predictions keyed by `application_id` |
+| `--use-pipeline` | No* | Run the deterministic pipeline per case to produce predictions |
+| `--output PATH` | No | Write the full `MetricsReport` to a file |
+
+\* `--predictions` and `--use-pipeline` are mutually exclusive.
+
+The CLI prints a summary (accuracy, macro F1, cost-weighted error, AUC-ROC, KS, Gini, Brier, ECE, suspend rate, crew agreement rate) and exits non-zero on errors.
+
+---
+
 ## Configuration
 
 **File:** `backend/config/risk_config.yaml`
@@ -617,7 +732,7 @@ contradiction:
 llm:
   primary:
     provider: google
-    model: gemini-2.0-flash
+    model: gemini-3.6-flash
   fallback:
     provider: groq
     model: llama-3.1-70b-versatile
@@ -629,14 +744,20 @@ llm:
 
 ```
 PRIMARY_LLM_PROVIDER=google
-PRIMARY_LLM_MODEL=gemini-2.0-flash
+PRIMARY_LLM_MODEL=gemini-3.6-flash
 FALLBACK_LLM_PROVIDER=groq
 FALLBACK_LLM_MODEL=llama-3.1-70b-versatile
 GOOGLE_API_KEY=your-google-api-key
 GROQ_API_KEY=your-groq-api-key
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_LLM_MODEL=gpt-4o
+LLM_TEMPERATURE=0.2
+LLM_MAX_TOKENS=4096
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/mortgage_uw
 RISK_CONFIG_PATH=config/risk_config.yaml
 ```
+
+The Google (primary) and Groq (fallback) providers require their CrewAI extras installed (`pip install 'crewai[google-genai]'`, `pip install 'crewai[litellm]'`). If both are unavailable, `build_llm()` falls back to OpenAI using `OPENAI_API_KEY`.
 
 ---
 
@@ -667,9 +788,11 @@ RISK_CONFIG_PATH=config/risk_config.yaml
 | `ConfidenceAssessment` | score, factors, below_threshold, reasoning |
 | `CrewMemberOutput` | role, recommendation, confidence, reasoning, key_factors, risks_identified, missing_information |
 | `DecisionCrewOutput` | underwriter, risk_analyst, report_writer, execution_time_seconds, error |
-| `DecisionResult` | Full final decision with all fields |
+| `DecisionResult` | Full final decision with all fields, including `gate_triggered: str \| None` |
 | `UnderwritingReport` | 15-section structured report |
 | `AuditRecord` | Complete audit trail entry |
+| `LabeledCase` | Evaluation case: pipeline inputs + `ground_truth_decision` + optional `predicted` |
+| `MetricsReport` | Evaluation output: classification, ranking, calibration, runtime metrics + `generated_at` |
 
 ---
 
@@ -754,15 +877,22 @@ Four synthetic test cases in `conftest.py`:
 | `test_agent_comparator.py` | Income/property agreement, material disagreement, confidence keys |
 | `test_risk_engine.py` | Score ranges, 6 components, weight sum, bounds |
 | `test_confidence.py` | Good case > 0.6, contradiction penalty, bounds |
-| `test_crew.py` | Case summary generation, JSON parsing (no real LLM call) |
+| `test_crew.py` | Case summary generation, JSON parsing incl. markdown-fenced/prose output, tool behavior (no real LLM call) |
+| `test_live_crew.py` | Live-LLM crew smoke test — skipped unless `RUN_LIVE_TESTS=1` |
 | `test_finalizer.py` | Gate logic for all decision outcomes, evidence presence |
 | `test_report_writer.py` | Report generation, decision unchanged, disclaimer |
 | `test_e2e_pipeline.py` | Full deterministic pipeline (no crew) across all 4 cases |
+| `test_evaluation.py` | Classification/ranking/calibration/runtime metrics, loaders, CLI, evaluation endpoints, labeled dataset (32 cases) |
 
 Run tests:
 ```bash
 cd backend
 pytest
+```
+
+Run the live crew test (requires configured API keys):
+```bash
+RUN_LIVE_TESTS=1 pytest tests/test_live_crew.py
 ```
 
 ---
