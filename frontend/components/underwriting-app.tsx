@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { underwritingService, type ApplicationView } from '@/lib/underwriting-service'
 import { getAuthenticatedUser } from '@/lib/auth-service'
 import {
-  AgentReports, ApplicationsView, Dashboard, Detail, FinalReportView, HumanReview, NewApplication,
-  type View,
+  AgentReports, ApplicationsView, Dashboard, Detail, DocumentReview, FinalReportView, HumanReview,
+  NewApplication, type View,
 } from '@/components/views'
 import {
   BarChart3, Bell, ChevronDown, CircleHelp, FileCheck2, FileText, LayoutDashboard, Menu,
@@ -36,8 +36,8 @@ function Sidebar({ view, setView, collapsed, setCollapsed, count }: { view: View
 }
 
 function Header({ view, setView, onMenu }: { view: View; setView: (v: View) => void; onMenu: () => void }) { const [profileOpen, setProfileOpen] = useState(false); const user = getAuthenticatedUser();
-  const title = view === 'dashboard' ? 'Underwriting overview' : view === 'applications' ? 'Applications' : view === 'new' ? 'New loan application' : view === 'reports' ? 'Agent reports' : view === 'review' ? 'Human review queue' : view === 'final-report' ? 'Final reports' : 'Application details'
-  return <header className="topbar"><div className="mobile-menu"><button className="icon-button" onClick={onMenu} aria-label="Open navigation"><Menu size={20} /></button></div><div><div className="eyebrow">Workspace / {view === 'dashboard' ? 'Overview' : view === 'applications' ? 'Applications' : view === 'new' ? 'Applications / New' : view === 'reports' ? 'Agent reports' : view === 'review' ? 'Human review' : view === 'final-report' ? 'Final reports' : 'Application details'}</div><h1>{title}</h1></div><div className="topbar-actions"><div className="search-box"><Search size={16} /><input aria-label="Search applications" placeholder="Search applications" /></div><button className="icon-button has-dot" aria-label="Notifications"><Bell size={18} /></button><div className="profile-menu"><button className="top-user" aria-label="Open profile" onClick={() => setProfileOpen(!profileOpen)}><UserRound size={17} /><ChevronDown size={14} /></button>{profileOpen && <div className="profile-popover">{user ? <span>{user.email}</span> : <button>Sign in</button>}</div>}</div></div></header>
+  const title = view === 'dashboard' ? 'Underwriting overview' : view === 'applications' ? 'Applications' : view === 'new' ? 'New loan application' : view === 'reports' ? 'Agent reports' : view === 'review' ? 'Human review queue' : view === 'final-report' ? 'Final reports' : view === 'document-review' ? 'Review documents' : 'Application details'
+  return <header className="topbar"><div className="mobile-menu"><button className="icon-button" onClick={onMenu} aria-label="Open navigation"><Menu size={20} /></button></div><div><div className="eyebrow">Workspace / {view === 'dashboard' ? 'Overview' : view === 'applications' ? 'Applications' : view === 'new' ? 'Applications / New' : view === 'reports' ? 'Agent reports' : view === 'review' ? 'Human review' : view === 'final-report' ? 'Final reports' : view === 'document-review' ? 'Human review / Documents' : 'Application details'}</div><h1>{title}</h1></div><div className="topbar-actions"><div className="search-box"><Search size={16} /><input aria-label="Search applications" placeholder="Search applications" /></div><button className="icon-button has-dot" aria-label="Notifications"><Bell size={18} /></button><div className="profile-menu"><button className="top-user" aria-label="Open profile" onClick={() => setProfileOpen(!profileOpen)}><UserRound size={17} /><ChevronDown size={14} /></button>{profileOpen && <div className="profile-popover">{user ? <span>{user.email}</span> : <button>Sign in</button>}</div>}</div></div></header>
 }
 
 
@@ -45,6 +45,7 @@ export default function UnderwritingApp() {
   const [view, setView] = useState<View>('dashboard')
   const [apps, setApps] = useState<ApplicationView[]>([])
   const [selectedId, setSelectedId] = useState('')
+  const [reviewDocId, setReviewDocId] = useState<string | undefined>(undefined)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [loadError, setLoadError] = useState('')
@@ -62,6 +63,7 @@ export default function UnderwritingApp() {
   // Reports default to the most recent application when none is selected.
   const current = apps.find((a) => a.id === selectedId) ?? apps[0] ?? null
   const open = (id: string) => { setSelectedId(id); setView('detail') }
+  const openReview = (id: string, docId?: string) => { setSelectedId(id); setReviewDocId(docId); setView('document-review') }
 
   return (
     <div className="app-shell">
@@ -75,10 +77,18 @@ export default function UnderwritingApp() {
         {view === 'dashboard' && <Dashboard apps={apps} setView={setView} open={open} />}
         {view === 'applications' && <ApplicationsView apps={apps} setView={setView} open={open} />}
         {view === 'new' && <NewApplication setView={setView} onDone={(a) => { setApps((prev) => [a, ...prev]); open(a.id) }} />}
-        {view === 'detail' && <Detail app={current} setView={setView} />}
+        {view === 'detail' && <Detail app={current} setView={setView} onReviewDocuments={(docId) => openReview(current?.id ?? selectedId, docId)} />}
         {view === 'reports' && <AgentReports app={current} setView={setView} />}
-        {view === 'review' && <HumanReview apps={apps} setView={setView} open={open} onChanged={refresh} />}
+        {view === 'review' && <HumanReview apps={apps} setView={setView} open={open} onChanged={refresh} onReviewDocuments={openReview} />}
         {view === 'final-report' && <FinalReportView app={current} setView={setView} />}
+        {view === 'document-review' && (
+          <DocumentReview
+            app={current}
+            initialDocId={reviewDocId}
+            setView={setView}
+            onRerun={(a) => { setApps((prev) => [a, ...prev]); setSelectedId(a.id); setView('detail') }}
+          />
+        )}
       </main>
     </div>
   )

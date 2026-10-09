@@ -67,6 +67,10 @@ class DocumentRow(Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     content: Mapped[bytes] = mapped_column(LargeBinary)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Human-in-the-loop review: what this run's extraction produced for this
+    # document, and any reviewer corrections (applied on the next /rerun).
+    parsed_fields: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    field_overrides: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
 
 def normalise_url(raw: str) -> URL:
@@ -93,6 +97,24 @@ def ensure_database(url: URL) -> bool:
             return False
     finally:
         admin.dispose()
+
+
+# `Base.metadata.create_all()` only creates tables that don't exist yet - it
+# never adds a column to a table from an earlier version of this schema, so
+# a column added here after someone's database was first created would
+# otherwise make every query against it fail with "column does not exist".
+# A stop-gap until this project has real migrations (Alembic); safe to run
+# on every startup (IF NOT EXISTS makes it a no-op once applied).
+_ADDED_COLUMNS = (
+    ("documents", "parsed_fields", "JSONB"),
+    ("documents", "field_overrides", "JSONB"),
+)
+
+
+def _ensure_columns(engine) -> None:
+    with engine.begin() as conn:
+        for table, column, col_type in _ADDED_COLUMNS:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"))
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -122,6 +144,7 @@ class PostgresApplicationStore:
         self.created_database = ensure_database(url)
         self.engine = create_engine(url, pool_pre_ping=True)
         Base.metadata.create_all(self.engine)
+        _ensure_columns(self.engine)
         self._session = sessionmaker(self.engine, expire_on_commit=False)
         self.description = f"{url.host}:{url.port or 5432}/{url.database}"
 
@@ -204,3 +227,31 @@ class PostgresApplicationStore:
             if row is None or row.application_id != application_id:
                 return None
             return row.filename, bytes(row.content)
+
+    def save_parsed_fields(self, application_id: str, doc_id: str, parsed: dict[str, Any]) -> None:
+        with self._session.begin() as s:
+            row = s.get(DocumentRow, doc_id)
+            if row is not None and row.application_id == application_id:
+                row.parsed_fields = parsed
+
+    def get_parsed_fields(self, application_id: str, doc_id: str) -> dict[str, Any] | None:
+        with self._session() as s:
+            row = s.get(DocumentRow, doc_id)
+            if row is None or row.application_id != application_id:
+                return None
+            return row.parsed_fields
+
+    def save_override(self, application_id: str, doc_id: str, overrides: dict[str, Any]) -> bool:
+        with self._session.begin() as s:
+            row = s.get(DocumentRow, doc_id)
+            if row is None or row.application_id != application_id:
+                return False
+            row.field_overrides = overrides
+            return True
+
+    def get_override(self, application_id: str, doc_id: str) -> dict[str, Any] | None:
+        with self._session() as s:
+            row = s.get(DocumentRow, doc_id)
+            if row is None or row.application_id != application_id:
+                return None
+            return row.field_overrides

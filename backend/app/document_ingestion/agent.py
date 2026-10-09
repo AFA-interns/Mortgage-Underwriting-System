@@ -40,6 +40,8 @@ from app.document_ingestion.extractors import DocumentExtractors
 from app.document_ingestion.validators import IndianDocumentValidators
 from app.document_ingestion.reconciliation import CrossDocumentReconciler
 from app.document_ingestion.confidence import ConfidenceEvaluator
+from app.document_ingestion.config import get_document_ingestion_config
+from app.document_ingestion.field_overrides import apply_overrides, editable_fields_for
 
 
 class DocumentIngestionAgent:
@@ -51,10 +53,19 @@ class DocumentIngestionAgent:
         file_paths: List[str],
         application_id: str = "APP-2026-IND-001",
         borrower_id: str = "BORR-2026-001",
+        field_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> DocumentIngestionOutput:
         """
         Runs the complete 7-step ingestion workflow across a bundle of borrower documents.
+
+        `field_overrides`, keyed by entry in `file_paths`, lets a human
+        reviewer correct a field extraction got wrong (see
+        app.document_ingestion.field_overrides). Applied right after Step 4
+        (structured extraction), before validation, so the correction is
+        what gets validated, reconciled, scored and used by every
+        downstream agent — not the original mistake.
         """
+        field_overrides = field_overrides or {}
         audit_log: List[str] = []
         audit_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Started ingestion for Application ID: {application_id}")
 
@@ -67,6 +78,7 @@ class DocumentIngestionAgent:
         bank_statement: Optional[BankStatementData] = None
         property_doc: Optional[PropertyDocData] = None
         docs_metadata: List[DocumentMetadata] = []
+        parsed_entities: Dict[str, Dict[str, Any]] = {}
 
         # =============================================================
         # STEPS 1-4: Intake, Preprocess, Classify, Extract
@@ -96,21 +108,40 @@ class DocumentIngestionAgent:
             audit_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Classified '{prep_doc.filename}' as {doc_type.value} (Conf: {class_conf * 100:.1f}%)")
 
             # Step 4: Structured Field Extraction
+            entity: Any = None
             if doc_type == DocumentType.PAN_CARD:
-                pan_data = DocumentExtractors.extract_pan(prep_doc)
+                pan_data = entity = DocumentExtractors.extract_pan(prep_doc)
             elif doc_type == DocumentType.AADHAAR_CARD:
-                aadhaar_data = DocumentExtractors.extract_aadhaar(prep_doc)
+                aadhaar_data = entity = DocumentExtractors.extract_aadhaar(prep_doc)
             elif doc_type == DocumentType.SALARY_SLIP:
-                slip = DocumentExtractors.extract_salary_slip(prep_doc)
+                slip = entity = DocumentExtractors.extract_salary_slip(prep_doc)
                 salary_slips.append(slip)
             elif doc_type == DocumentType.FORM_16:
-                form_16 = DocumentExtractors.extract_form_16(prep_doc)
+                form_16 = entity = DocumentExtractors.extract_form_16(prep_doc)
             elif doc_type == DocumentType.ITR:
-                itr_v = DocumentExtractors.extract_itr(prep_doc)
+                itr_v = entity = DocumentExtractors.extract_itr(prep_doc)
             elif doc_type == DocumentType.BANK_STATEMENT:
-                bank_statement = DocumentExtractors.extract_bank_statement(prep_doc)
+                bank_statement = entity = DocumentExtractors.extract_bank_statement(prep_doc)
             elif doc_type == DocumentType.PROPERTY_DEED:
-                property_doc = DocumentExtractors.extract_property_deed(prep_doc)
+                property_doc = entity = DocumentExtractors.extract_property_deed(prep_doc)
+
+            # Human-in-the-loop correction, applied before validation runs.
+            overrides = field_overrides.get(path)
+            if entity is not None and overrides:
+                applied = apply_overrides(entity, overrides)
+                if applied:
+                    audit_log.append(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] Applied human-review overrides to "
+                        f"'{prep_doc.filename}': {', '.join(applied)}"
+                    )
+
+            # Snapshot the reviewer-editable fields for this document (see
+            # app.document_ingestion.field_overrides for the GET/PUT this feeds).
+            if entity is not None:
+                parsed_entities[prep_doc.filename] = {
+                    "doc_type": doc_type.value,
+                    "fields": {f: getattr(entity, f) for f in editable_fields_for(doc_type)},
+                }
 
         # =============================================================
         # STEP 5: Field Validation
@@ -129,7 +160,8 @@ class DocumentIngestionAgent:
             aadhaar_data.is_valid_format = aadh_val.is_valid
             audit_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Aadhaar Validation: {aadh_val.message}")
 
-        # Validate Salary Slips Arithmetic
+        # Validate Salary Slips Arithmetic and Recency
+        recency_window = get_document_ingestion_config()["salary_slip"]["recency_window_months"]
         for s in salary_slips:
             sal_val = IndianDocumentValidators.validate_salary_arithmetic(
                 gross_salary=s.gross_salary,
@@ -138,6 +170,13 @@ class DocumentIngestionAgent:
             )
             s.is_arithmetically_valid = sal_val.is_valid
             audit_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Salary Math ({s.month_year}): {sal_val.message}")
+
+            recency_val = IndianDocumentValidators.validate_payslip_recency(
+                s.month_year, window_months=recency_window,
+            )
+            s.is_recent = recency_val.is_valid
+            s.recency_message = None if recency_val.is_valid else recency_val.message
+            audit_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] Payslip Recency ({s.month_year}): {recency_val.message}")
 
         # Validate Bank IFSC
         if bank_statement and bank_statement.ifsc_code:
@@ -291,6 +330,7 @@ class DocumentIngestionAgent:
             confidence=confidence_breakdown,
             human_review=human_review,
             audit_log=audit_log,
+            parsed_entities=parsed_entities,
         )
 
 
@@ -307,15 +347,18 @@ def document_ingestion_node(state: Union[MortgageUnderwritingState, Dict[str, An
         raw_paths = state.get("raw_document_paths", [])
         app_id = state.get("application_id", "APP-2026-IND-001")
         borrower_id = state.get("borrower_id", "BORR-2026-001")
+        field_overrides = state.get("field_overrides")
     else:
         raw_paths = state.raw_document_paths
         app_id = state.application_id
         borrower_id = state.borrower_id or "BORR-2026-001"
+        field_overrides = None
 
     output = DocumentIngestionAgent.process_document_bundle(
         file_paths=raw_paths,
         application_id=app_id,
         borrower_id=borrower_id,
+        field_overrides=field_overrides,
     )
 
     next_step = "HUMAN_IN_THE_LOOP" if output.human_review.requires_human_review and output.human_review.review_priority == "CRITICAL" else "CREDIT_AND_PROPERTY_ANALYSIS"

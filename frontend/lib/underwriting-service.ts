@@ -12,7 +12,17 @@ export type Stage = {
   highlights: string[]
 }
 
-export type DocumentFile = { id: string; filename: string; type: string; size_bytes: number }
+export type DocumentFile = { id: string; filename: string; type: string; size_bytes: number; has_parsed_fields?: boolean }
+
+export type ParsedDocument = {
+  application_id: string
+  document_id: string
+  doc_type: string
+  editable_fields: string[]
+  extracted_fields: Record<string, unknown>
+  overrides: Record<string, unknown>
+  effective_fields: Record<string, unknown>
+}
 
 export type ReviewItem = {
   id: string
@@ -57,6 +67,7 @@ export type ApplicationView = {
   report: Record<string, any>
   errors: string[]
   review_items: ReviewItem[]
+  revised_from?: string | null
 }
 
 export type DemoScenario = {
@@ -90,10 +101,32 @@ export const underwritingService = {
   listReviewItems: () => request<ReviewItem[]>('/api/v1/review-items'),
   resolveReview: (id: string) =>
     request<ReviewItem>(`/api/v1/review-items/${encodeURIComponent(id)}/resolve`, { method: 'POST' }),
+  /** What a document's ingestion extracted, any saved reviewer corrections, and the merge of the two. */
+  getParsedDocument: (applicationId: string, docId: string) =>
+    request<ParsedDocument>(`/api/v1/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(docId)}/parsed`),
+  /** Saves reviewer corrections for one document. Does not re-run the pipeline by itself. */
+  saveDocumentOverrides: (applicationId: string, docId: string, overrides: Record<string, unknown>) =>
+    request<ParsedDocument>(`/api/v1/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(docId)}/parsed`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides }),
+    }),
+  /** Re-runs the full pipeline with saved corrections applied, producing a new, linked application. */
+  rerunApplication: (applicationId: string) =>
+    request<ApplicationView>(`/api/v1/applications/${encodeURIComponent(applicationId)}/rerun`, { method: 'POST' }),
 }
 
 export const documentUrl = (applicationId: string, docId: string): string =>
   `/api/v1/applications/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(docId)}`
+
+const FIELD_LABELS: Record<string, string> = {
+  pan_number: 'PAN number', dob: 'Date of birth', aadhaar_number: 'Aadhaar number',
+  ifsc_code: 'IFSC code', employer_tan: 'Employer TAN', employee_pan: 'Employee PAN',
+  gross_salary_sec17_1: 'Gross salary (Sec 17(1))', total_deductions_chapter_via: 'Deductions (Chapter VI-A)',
+}
+
+export const humanizeField = (field: string): string =>
+  FIELD_LABELS[field] ?? field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 export const formatSize = (bytes: number): string =>
   bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`

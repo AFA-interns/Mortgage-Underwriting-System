@@ -56,14 +56,16 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 
 **7-Step Pipeline:**
 1. **Classification** — Multi-signal pattern scoring for Indian mortgage docs (PAN, Aadhaar, Salary Slip, Form 16, ITR, Bank Statement, Property Deed)
-2. **Preprocessing** — PyMuPDF text/layout extraction, table detection
+2. **Preprocessing** — PyMuPDF text/layout extraction, table detection. **JPG/PNG uploads** are converted to a one-page PDF (Pillow) first; any PDF page with no text layer (a converted image, or a scanned PDF) is then OCR'd with Tesseract (`app/services/ocr.py`) — optional, degrades to low-confidence/human-review if Tesseract isn't installed, never crashes
 3. **Structured Extraction** — Pydantic entities with field-level provenance
-4. **Validation** — PAN checksum, Aadhaar Verhoeff, IFSC, salary arithmetic
+4. **Validation** — PAN checksum, Aadhaar Verhoeff, IFSC, salary arithmetic, **payslip recency** (must be dated within the last 3 months by default — configurable in `config/document_ingestion_config.yaml`)
 5. **Cross-Document Reconciliation** — Fuzzy name matching, income vs bank credits, employer consistency, address verification
 6. **Confidence Scoring** — Multi-dimensional breakdown, mandatory document checklist
 7. **HITL Routing** — Human review triggers based on confidence thresholds
 
 **Key Models:** `BorrowerKYCProfile`, `BorrowerIncomeProfile`, `BorrowerLiabilitiesProfile`, `PropertyProfile`
+
+**Human-in-the-loop review** (`app/document_ingestion/field_overrides.py`): each document's extracted fields are kept (`DocumentIngestionOutput.parsed_entities`, persisted per document). A reviewer can see what was extracted, correct a field extraction got wrong (PAN mis-OCR'd, a typo, ...), and re-run — the correction is applied right after extraction and before validation, so it flows into validation, reconciliation, confidence and every downstream agent exactly as if extraction had gotten it right. Only a closed whitelist of scalar fields per document type is editable; corrections are stored against the original application and only take effect on `/rerun`, which produces a **new** application (linked via `revised_from`) — the original is never modified.
 
 ---
 
@@ -87,9 +89,9 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 **Input:** Property data from `doc_ingestion_output.property_profile`  
 **Output:** `property_analysis` (dict)
 
-**Pipeline:** Geocode → AVnester live listings → Median ₹/sqft × area → Confidence → Explain  
-**Sources:** Nominatim geocoder and the live [AVnester](https://www.avnester.com) public API (no key needed). There is no local/dummy data.  
-**Behaviour:** searches the subject's locality first and widens to the whole city when fewer than 3 usable comparables exist (confidence −0.10). Supports `apartment`, `villa`, `independent_house` and `plot`. **AVnester only covers Tamil Nadu**, and its for-sale inventory is currently mostly plots, so anything else (or an AVnester outage) yields valuation 0 / confidence 0 and a SUSPEND for human review.
+**Pipeline:** Geocode → AVnester live listings (fallback: local comparables database) → Median ₹/sqft × area → Confidence → Explain  
+**Sources:** Nominatim geocoder, the live [AVnester](https://www.avnester.com) public API (no key needed, Tamil Nadu only) as the primary source, and a local PostgreSQL `property_listings` table (`app/services/property_db.py`, `app/tools/local_comparables.py`) populated by a separate Square Yards scraper (`property_data/`, run manually via `scripts/ingest_squareyards.py`) as the fallback source for everywhere else. There is no hand-written dummy data — both sources are either live or scraped-and-stored real listings.  
+**Behaviour:** tries AVnester first, searching the subject's locality then widening to the whole city when fewer than 3 usable comparables exist (confidence −0.10). If AVnester has nothing usable (wrong state, API outage, or thin inventory), falls back to the local comparables database with the same locality→city widening, at a slightly lower confidence (0.65 locality / 0.55 city) and a risk flag explaining the fallback. Supports `apartment`, `villa`, `independent_house` and `plot`. **AVnester only covers Tamil Nadu**, and its for-sale inventory is currently mostly plots; when the local database also has nothing for that location, valuation is 0 / confidence 0 and a SUSPEND for human review. The response's `value_source` field (`"avnester"` or `"local_db"`) and `sources` list report which source actually produced the estimate.
 
 ---
 
@@ -144,9 +146,9 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | PDF Processing | PyMuPDF (fitz), pdfplumber |
 | NLP/Extraction | Regex + deterministic parsers |
 | Geocoding | geopy (Nominatim) |
-| Data | pandas (comparables CSV), rapidfuzz (identity matching) |
+| Data | SQLAlchemy + psycopg (PostgreSQL: applications, local comparables), BeautifulSoup4 + httpx (Square Yards scraper), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (156 tests) |
+| Testing | pytest (223 tests) |
 | Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
@@ -167,7 +169,8 @@ mortgage-underwriting-system/
 │   │   │   ├── risk_engine.py, confidence.py, finalizer.py, report_writer.py
 │   │   ├── document_ingestion/         # 7-step ingestion pipeline
 │   │   │   ├── agent.py, classifier.py, extractors.py, validators.py
-│   │   │   ├── reconciliation.py, confidence.py, preprocessor.py
+│   │   │   ├── reconciliation.py, confidence.py, preprocessor.py, config.py
+│   │   │   ├── image_to_pdf.py (JPG/PNG → PDF), field_overrides.py (HITL review)
 │   │   ├── compliance/                 # KYC, identity, PMLA, RBI, NHB, RERA rules + engine
 │   │   ├── graph/
 │   │   │   ├── nodes/                  # LangGraph nodes
@@ -178,12 +181,16 @@ mortgage-underwriting-system/
 │   │   │   ├── decision.py, document_ingestion.py, document_ingestion_state.py
 │   │   │   └── property_valuation.py
 │   │   ├── tools/                      # Shared utilities
-│   │   │   ├── external_api.py (AVnester valuation), geocoder.py
-│   │   ├── services/credit_bureau.py   # Stub (replace with real API)
+│   │   │   ├── external_api.py (AVnester valuation), local_comparables.py (local-DB fallback), geocoder.py
+│   │   ├── services/credit_bureau.py, ocr.py (Tesseract), db.py, llm.py, property_db.py (local listings table)
 │   │   ├── config/risk_config.yaml     # Decision thresholds
 │   │   └── main.py                     # FastAPI entrypoint
-│   ├── config/                         # risk_, credit_, compliance_config.yaml
-│   ├── tests/                          # 156 tests (unit + e2e)
+│   ├── property_data/                  # Square Yards scraper (async) + cleaners, standalone - not imported by main.py
+│   │   ├── scrapers/ (base_scraper.py, squareyards_scraper.py, demo_scraper.py)
+│   │   ├── cleaners/property_cleaner.py, pipeline.py, valuation.py
+│   ├── scripts/ingest_squareyards.py   # One-off CLI: scrape -> clean -> property_db.save_listings
+│   ├── config/                         # risk_, credit_, compliance_, document_ingestion_config.yaml
+│   ├── tests/                          # 223 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -195,13 +202,15 @@ mortgage-underwriting-system/
 
 ## ⚙️ Environment
 
-Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key. **Local LLM:** with [Ollama](https://ollama.com) running (`ollama pull llama3.2`), `LLM_PROVIDER=ollama` makes the compliance and property agents write their explanations with it (a run then takes ~5-15 s instead of ~1 s). Set `LLM_PROVIDER=none` to always use the fixed templates. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review.
+Copy `backend/.env.example` to `backend/.env` (loaded automatically at startup). No secret is required: the AVnester public API needs no key. **Local LLM:** with [Ollama](https://ollama.com) running (`ollama pull llama3.2`), `LLM_PROVIDER=ollama` makes the compliance and property agents write their explanations with it (a run then takes ~5-15 s instead of ~1 s). Set `LLM_PROVIDER=none` to always use the fixed templates. If AVnester has no listings for a locality (or is unreachable), valuation confidence drops to 0 and the decision is SUSPENDed for human review. **OCR (JPG/PNG uploads, scanned PDFs):** install [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) and, if it isn't on PATH, set `TESSERACT_CMD` to its full path. Without it, image uploads still convert to PDF and store fine — they just extract no text, same as an unreadable document.
 
 ---
 
 ## 🗄️ Database (PostgreSQL)
 
 Set `DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/mortgage_uw` in `backend/.env`. On startup the backend creates the database (if missing) and these tables: `applications` (full result as JSONB), `review_items`, and `documents` (the uploaded PDFs, so a human reviewer can open them from the UI). `GET /health` reports `"storage": "postgres"` or `"memory"`. With `DATABASE_URL` empty, or if Postgres is unreachable, the app falls back to in-memory storage and logs an error. Tests always use memory; run the Postgres round-trip test with `TEST_DATABASE_URL` pointing at a throwaway database.
+
+The same `DATABASE_URL` also backs a `property_listings` table (`app/services/property_db.py`), created on first use, independent of the `applications` store above. It's populated by scraping public listing sites (`backend/scripts/ingest_squareyards.py`, run manually — not part of request serving) and read by `app/tools/local_comparables.py` as the property agent's fallback valuation source when AVnester has nothing usable. With no `DATABASE_URL`, that fallback is simply unavailable (AVnester-only).
 
 ---
 
@@ -213,7 +222,7 @@ Set `DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/mortgage_uw` in `bac
 |-------|--------------|------|
 | Document Ingestion | Regex / rule-based extraction, validators and reconciliation | Never |
 | Credit | Rules for CIBIL band, FOIR, LTV, red flags, then a composite score; fixed explanation text | Never |
-| Property | Live AVnester listings → median ₹/sq ft × area; confidence from comparable count | Optional: only the 2-3 sentence explanation |
+| Property | Live AVnester listings (fallback: local comparables database) → median ₹/sq ft × area; confidence from comparable count | Optional: only the 2-3 sentence explanation |
 | Compliance | Deterministic rules engine (KYC, identity, PMLA, RBI, NHB, RERA) | Optional: only the explanation |
 | Decision | 6-component weighted risk engine, contradiction checks, hard safety gates; rule-based crew and report | Never (must stay repeatable and auditable) |
 
@@ -228,7 +237,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 156 tests pass
+pytest tests/ -v           # 223 tests pass
 python smoke_test_pipeline.py  # Full pipeline on the 4 mock-document scenarios (prints each result)
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -241,6 +250,8 @@ uvicorn app.main:app --reload  # Start API server
 | Browser | Start backend + frontend, open http://localhost:3000, **New application** → pick a demo scenario | The full workflow, agent reports, review queue and final report |
 
 Expected results: **clean → APPROVE** (risk 88), **name mismatch / salary mismatch / missing documents → SUSPEND** (human review). The mock PDFs are generated into `backend/mock_documents/` by `tests/mock_data/generate_docs.py`.
+
+**Show image upload (JPG/PNG → PDF → OCR) working:** pick the **"Scanned documents (JPG/PNG)"** demo scenario — same borrower as `clean`, but the PAN (`.png`) and Aadhaar (`.jpg`) are photographed-card images, generated by `generate_image_demo_documents()` in the same file. It reaches the same APPROVE outcome as the all-PDF `clean` scenario, with both images visibly converted, OCR'd, classified and stored as real, downloadable PDFs — open either from the application's **Submitted documents** panel to confirm. You can also upload those two image files yourself from `backend/mock_documents/scenario_5_image_upload/` through **New application**'s own uploader once the scenario has generated them once (or run `python -c "from tests.mock_data.generate_docs import generate_image_demo_documents; generate_image_demo_documents()"` from `backend/` to generate them directly).
 
 **Frontend:**
 ```bash
@@ -255,11 +266,13 @@ Start the backend first (`uvicorn app.main:app --port 8000`).
 ## 🖥️ Running the full stack
 
 ```bash
-cd backend  && .env\Scripts\python.exe -m uvicorn app.main:app --port 8000
+cd backend  && .\venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 cd frontend && npx pnpm@10 dev          # http://localhost:3000
 ```
 
-In the UI, **New application** accepts real PDFs (or one of four demo scenarios) and runs the whole pipeline: ingestion → credit + property + compliance → decision. Results appear on the dashboard, the application's workflow page, per-agent reports, the human-review queue and the final report. Applications, review items and the uploaded PDFs are stored in PostgreSQL (see below).
+In the UI, **New application** accepts real PDFs/JPGs/PNGs (or one of five demo scenarios) and runs the whole pipeline: ingestion → credit + property + compliance → decision. Results appear on the dashboard, the application's workflow page, per-agent reports, the human-review queue and the final report. Applications, review items and the uploaded documents are stored in PostgreSQL (see below).
+
+**Document review (human-in-the-loop):** from an application's detail page ("Review documents") or from a Human Review queue item's document list, open a side-by-side view — the source PDF on the left, that document's extracted fields as an editable form on the right (the standard document-extraction-review layout: see `DocumentReview` in `frontend/components/views.tsx`). Correct a field, save it, switch between the application's other documents the same way, then **Re-run with corrections** — this re-runs the full pipeline with the saved corrections applied before validation, producing a new application linked back to the original (shown as "Revision of {id}"). The original application is never modified.
 
 ## 📡 API Endpoints
 
@@ -268,6 +281,9 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 | POST | `/api/v1/underwriting/run` | **Full pipeline from uploaded PDFs** (multipart) or `demo_scenario` |
 | GET | `/api/v1/applications`, `/api/v1/applications/{id}` | Stored results (agents, report, review items) |
 | GET | `/api/v1/applications/{id}/documents/{doc_id}` | Stored source PDF (inline) |
+| GET | `/api/v1/applications/{id}/documents/{doc_id}/parsed` | Extracted fields + overrides + the whitelist of editable fields |
+| PUT | `/api/v1/applications/{id}/documents/{doc_id}/parsed` | Save reviewer corrections (`{"overrides": {field: value}}`) |
+| POST | `/api/v1/applications/{id}/rerun` | Re-run the pipeline with saved corrections applied → a new, linked application |
 | GET/POST | `/api/v1/review-items`, `/api/v1/review-items/{id}/resolve` | Human-review queue |
 | GET | `/api/v1/demo-scenarios` | Bundled demo borrowers |
 | POST | `/underwriting/{application_id}/run` | Execute full pipeline (server-side file paths) |
@@ -304,7 +320,12 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 | E2E Pipeline (APPROVE, DENY, SUSPEND, Compliance Gate) | 8 | 100% |
 | Compliance (6 rule modules, scoring, crew, node) | 43 | 100% |
 | Pipeline regressions (graph, AVnester valuation, compliance mapping, scenario 1 APPROVE) | 10 | 100% |
-| **Total** | **156** | **100%** |
+| Storage (stored documents, PostgreSQL round-trip) | 5 | 100% |
+| Payslip recency (last-3-months validation) | 10 | 100% |
+| Image upload (JPG/PNG → PDF, OCR fallback, image demo scenario) | 9 | 100% |
+| Human-in-the-loop review (view/edit/rerun with corrections, correctable-PAN-error demo) | 15 | 100% |
+| Local comparables (property DB, local-valuation fallback, Square Yards cleaners) | 28 | 100% |
+| **Total** | **223** | **100%** |
 
 ---
 
@@ -316,7 +337,7 @@ In the UI, **New application** accepts real PDFs (or one of four demo scenarios)
 4. **Transformation Node** — Bridges `doc_ingestion_output` → `document_analysis` format
 5. **Hard Safety Gates** — Decision finalizer overrides any crew recommendation
 6. **Evidence Provenance** — Every field traces back to source agent/document
-6. **Test Fixtures** — 4 realistic Indian mortgage scenarios (clean prime: Coimbatore residential plot priced live from AVnester; name discrepancy; salary discrepancy; missing docs)
+6. **Test Fixtures** — 5 realistic Indian mortgage scenarios (clean prime: Coimbatore residential plot priced live from AVnester; name discrepancy; salary discrepancy; missing docs; scanned/photographed documents), plus a dedicated HITL demo scenario (correctable PAN error) showing a document correction flip a blocked application to APPROVE
 
 ---
 

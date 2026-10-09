@@ -64,3 +64,4 @@ __v0_jsx-dev-runtime.ts
 next-env.d.ts
 *.err
 tsconfig.tsbuildinfo
+docs/

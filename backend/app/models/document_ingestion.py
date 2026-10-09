@@ -76,6 +76,8 @@ class SalarySlipData(BaseModel):
     bank_account_number_hint: Optional[str] = Field(default=None, description="Disbursal bank account suffix or number")
     pan_number_hint: Optional[str] = None
     is_arithmetically_valid: bool = Field(default=False, description="Gross == Net + Deductions within tolerance")
+    is_recent: bool = Field(default=True, description="Dated within the configured recency window (default: last 3 months) as of processing time")
+    recency_message: Optional[str] = Field(default=None, description="Explanation when is_recent is False or the date could not be parsed")
     provenance: Dict[str, FieldProvenance] = Field(default_factory=dict)
 
 

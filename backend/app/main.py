@@ -59,8 +59,12 @@ async def health() -> dict[str, str]:
 # Full-pipeline endpoints used by the frontend
 # -------------------------------------------------------
 
-from app.services.applications import DEMO_SCENARIOS, run_application, store  # noqa: E402
+from app.services.applications import (  # noqa: E402
+    DEMO_SCENARIOS, get_parsed_document, materialize_image_paths, rerun_application,
+    run_application, save_document_overrides, store,
+)
 from app.services.credit_bureau import declared_score_report  # noqa: E402
+from app.document_ingestion.image_to_pdf import convert_image_to_pdf  # noqa: E402
 
 MAX_UPLOAD_BYTES = 20_000_000
 
@@ -95,23 +99,33 @@ def run_full_pipeline(
         scenario = DEMO_SCENARIOS.get(demo_scenario)
         if scenario is None:
             raise HTTPException(400, f"Unknown demo scenario '{demo_scenario}'. Valid: {list(DEMO_SCENARIOS)}")
-        from tests.mock_data.generate_docs import generate_all_mock_scenarios
+        from tests.mock_data.generate_docs import (
+            generate_all_mock_scenarios, generate_correctable_pan_scenario, generate_image_demo_documents,
+        )
 
-        paths = generate_all_mock_scenarios()[scenario["key"]]
+        generator = scenario.get("generator")
+        if generator == "image_demo":
+            raw_paths = generate_image_demo_documents()
+        elif generator == "correctable_pan_error":
+            raw_paths = generate_correctable_pan_scenario()
+        else:
+            raw_paths = generate_all_mock_scenarios()[scenario["key"]]
+        paths, file_names = materialize_image_paths(raw_paths)
         return run_application(
             profile=dict(scenario["profile"]),
             file_paths=paths,
-            file_names=[os.path.basename(p) for p in paths],
+            file_names=file_names,
             bureau=scenario["bureau"],
             source=f"demo:{demo_scenario}",
         )
 
     uploads = [f for f in files if f.filename]
     if not uploads:
-        raise HTTPException(400, "Upload at least one PDF document (or choose a demo scenario).")
-    bad = [f.filename for f in uploads if not f.filename.lower().endswith(".pdf")]
+        raise HTTPException(400, "Upload at least one document (or choose a demo scenario).")
+    allowed_ext = (".pdf", ".jpg", ".jpeg", ".png")
+    bad = [f.filename for f in uploads if not f.filename.lower().endswith(allowed_ext)]
     if bad:
-        raise HTTPException(400, f"Only PDF documents are supported. Rejected: {bad}")
+        raise HTTPException(400, f"Only PDF, JPG and PNG documents are supported. Rejected: {bad}")
     if not name.strip() or loan_amount <= 0 or monthly_income <= 0:
         raise HTTPException(400, "Borrower name, monthly income and loan amount are required.")
     bureau = None
@@ -124,12 +138,25 @@ def run_full_pipeline(
     tmp_dir = tempfile.mkdtemp(prefix="uw_upload_")
     try:
         paths: list[str] = []
+        display_names: list[str] = []
         for i, upload in enumerate(uploads):
             dest = os.path.join(tmp_dir, f"{i:02d}_{os.path.basename(upload.filename)}")
             with open(dest, "wb") as out:
                 shutil.copyfileobj(upload.file, out)
             if os.path.getsize(dest) > MAX_UPLOAD_BYTES:
                 raise HTTPException(413, f"'{upload.filename}' is larger than {MAX_UPLOAD_BYTES // 1_000_000} MB.")
+
+            if dest.lower().endswith((".jpg", ".jpeg", ".png")):
+                # Convert now so the stored document (and everything
+                # downstream) is a real PDF, not a lying ".jpg" that's
+                # actually PDF bytes.
+                try:
+                    dest = convert_image_to_pdf(dest)
+                except Exception as exc:
+                    raise HTTPException(400, f"Could not read '{upload.filename}' as an image: {exc}") from exc
+                display_names.append(os.path.splitext(upload.filename)[0] + ".pdf")
+            else:
+                display_names.append(upload.filename)
             paths.append(dest)
 
         profile = {
@@ -144,7 +171,7 @@ def run_full_pipeline(
         return run_application(
             profile=profile,
             file_paths=paths,
-            file_names=[u.filename for u in uploads],
+            file_names=display_names,
             bureau=bureau,
             source="upload",
             bureau_consent=bureau_consent,
@@ -179,6 +206,50 @@ def get_application_document(application_id: str, doc_id: str) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{safe}"'},
     )
+
+
+@app.get("/api/v1/applications/{application_id}/documents/{doc_id}/parsed")
+def get_document_parsed_fields(application_id: str, doc_id: str) -> dict[str, Any]:
+    """What this document's ingestion extracted (`extracted_fields`), any
+    saved reviewer corrections (`overrides`), and the merge of the two
+    (`effective_fields`) — what a /rerun would use. `editable_fields` is the
+    whitelist the frontend's edit form should offer for this document type."""
+    if store.get(application_id) is None:
+        raise HTTPException(404, f"Application '{application_id}' not found.")
+    payload = get_parsed_document(application_id, doc_id)
+    if payload is None:
+        raise HTTPException(404, "No parsed content for this document (not found, or nothing was extracted).")
+    return payload
+
+
+class DocumentFieldOverrides(BaseModel):
+    overrides: Dict[str, Any]
+
+
+@app.put("/api/v1/applications/{application_id}/documents/{doc_id}/parsed")
+def put_document_parsed_fields(application_id: str, doc_id: str, body: DocumentFieldOverrides) -> dict[str, Any]:
+    """Saves reviewer corrections for one document. Does not re-run the
+    pipeline by itself — a reviewer can fix several documents first, then
+    call POST .../rerun once."""
+    if store.get(application_id) is None:
+        raise HTTPException(404, f"Application '{application_id}' not found.")
+    error = save_document_overrides(application_id, doc_id, body.overrides)
+    if error is not None:
+        raise HTTPException(400, error)
+    return get_parsed_document(application_id, doc_id)
+
+
+@app.post("/api/v1/applications/{application_id}/rerun")
+def post_rerun_application(application_id: str) -> dict[str, Any]:
+    """Re-runs the full pipeline for this application with any saved field
+    overrides applied, producing a new application linked via
+    `revised_from`. The original application is left untouched."""
+    try:
+        return rerun_application(application_id)
+    except KeyError as exc:
+        raise HTTPException(404, f"Application '{application_id}' not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/v1/review-items")
@@ -451,6 +522,8 @@ async def resume_valuation(thread_id: str, req: ResumeRequest):
 
 
 def _build_valuation_response(state_dict) -> dict:
+    value_source = state_dict.get("value_source", "avnester")
+    source_label = "Local comparables database" if value_source == "local_db" else "AVnester"
     return {
         "estimated_market_value_inr": state_dict.get("final_value", {}).get("estimated_market_value_inr", 0),
         "valuation_range_inr": state_dict.get("final_value", {}).get("valuation_range_inr", {"low": 0, "high": 0}),
@@ -462,8 +535,9 @@ def _build_valuation_response(state_dict) -> dict:
         "confidence_label": state_dict.get("confidence", {}).get("label", "UNKNOWN"),
         "risk_flags": state_dict.get("risk_flags", []),
         "human_review_required": state_dict.get("human_review_required", False),
-        "method": ["comparable_sales", "avnester"],
-        "sources": ["Nominatim Geocoder", "AVnester"],
+        "value_source": value_source,
+        "method": ["comparable_sales", value_source],
+        "sources": ["Nominatim Geocoder", source_label],
         "explanation": state_dict.get("explanation", ""),
     }
 

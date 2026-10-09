@@ -11,6 +11,12 @@ import pdfplumber
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 
+from app.services.ocr import ocr_available, ocr_image
+
+# A PDF whose extracted text layer is shorter than this is treated as
+# text-free (a scanned page, or a converted JPG/PNG) and OCR'd instead.
+_MIN_TEXT_LAYER_CHARS = 20
+
 
 class PreprocessedDocument:
     def __init__(
@@ -97,6 +103,28 @@ class DocumentPreprocessor:
             pass
 
         raw_text = "\n--- PAGE BREAK ---\n".join(full_text_list)
+        ocr_used = False
+
+        # No real text layer — a converted JPG/PNG, or a scanned PDF. Fall
+        # back to OCR so classification and field extraction still have
+        # text to work with. Silently does nothing if Tesseract isn't
+        # installed; the document is still stored, just with low/no
+        # extracted text, same as before this feature existed.
+        if len(raw_text.strip()) < _MIN_TEXT_LAYER_CHARS and ocr_available():
+            ocr_doc = fitz.open(file_path)
+            try:
+                pages_text = []
+                full_text_list = []
+                for page_idx in range(len(ocr_doc)):
+                    pixmap = ocr_doc[page_idx].get_pixmap(dpi=250)
+                    with Image.open(io.BytesIO(pixmap.tobytes("png"))) as page_image:
+                        page_text = ocr_image(page_image)
+                    pages_text.append(page_text)
+                    full_text_list.append(page_text)
+            finally:
+                ocr_doc.close()
+            raw_text = "\n--- PAGE BREAK ---\n".join(full_text_list)
+            ocr_used = True
 
         metadata = {
             "file_size_bytes": file_size,
@@ -106,6 +134,7 @@ class DocumentPreprocessor:
             "has_tables": len(tables_list) > 0,
             "table_count": len(tables_list),
             "text_length": len(raw_text),
+            "ocr_used": ocr_used,
         }
 
         return PreprocessedDocument(
@@ -121,27 +150,16 @@ class DocumentPreprocessor:
 
     @classmethod
     def _process_image(cls, file_path: str, filename: str, ext: str, file_size: int) -> PreprocessedDocument:
-        img = Image.open(file_path)
-        width, height = img.size
+        """Converts the image to a PDF and processes it as one (OCR'd there
+        if Tesseract is available — see _process_pdf). This is a fallback
+        for a caller that hands a raw image straight to process_file; the
+        normal upload path (app.main) already converts before this point,
+        so the stored document is a PDF either way."""
+        from app.document_ingestion.image_to_pdf import convert_image_to_pdf
 
-        # In a full OCR setup or standard PDF/image pipeline, we inspect image properties
-        metadata = {
-            "file_size_bytes": file_size,
-            "page_count": 1,
-            "image_width": width,
-            "image_height": height,
-            "image_mode": img.mode,
-            "has_tables": False,
-            "table_count": 0,
-        }
-
-        return PreprocessedDocument(
-            file_path=file_path,
-            filename=filename,
-            file_type=ext.upper().replace(".", ""),
-            page_count=1,
-            raw_text="",  # Raw text filled by OCR module if image
-            pages_text=[""],
-            tables=[],
-            metadata=metadata,
+        converted_path = convert_image_to_pdf(file_path)
+        converted_doc = cls._process_pdf(
+            converted_path, os.path.basename(converted_path), os.path.getsize(converted_path)
         )
+        converted_doc.metadata["converted_from_image"] = filename
+        return converted_doc

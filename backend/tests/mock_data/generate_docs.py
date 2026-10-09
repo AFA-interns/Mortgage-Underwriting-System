@@ -9,7 +9,19 @@ Generates realistic Indian mortgage test document packages (PDF format) using Py
 
 import os
 import fitz  # PyMuPDF
+from datetime import date
 from typing import Dict, List, Any, Optional
+
+
+def _recent_month_year(months_ago: int) -> str:
+    """'June 2026'-style label for the month `months_ago` months before
+    today, so the bundled payslips always pass the recency check (last 3
+    months) regardless of when this generator is run."""
+    today = date.today()
+    month_index = today.month - 1 - months_ago  # 0-based, can go negative
+    year = today.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, 1).strftime("%B %Y")
 
 
 def _create_pdf_document(output_path: str, pages_content: List[Dict[str, Any]] = None):
@@ -154,7 +166,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
     s1_files.append(aadhaar_p)
 
     # 3. Salary Slips
-    for month in ["April 2026", "May 2026", "June 2026"]:
+    for month in [_recent_month_year(2), _recent_month_year(1), _recent_month_year(0)]:
 
         month_fn = month.lower().replace(" ", "_")
 
@@ -488,7 +500,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         p_sal,
         [{
             "title": "INFOSYS LIMITED",
-            "subtitle": "Payslip for June 2026",
+            "subtitle": f"Payslip for {_recent_month_year(0)}",
             "sections": [
                 {
                     "heading": "Employee Earnings",
@@ -555,7 +567,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         v_sal,
         [{
             "title": "APEX RETAIL SOLUTIONS PVT LTD",
-            "subtitle": "Payslip for June 2026",
+            "subtitle": f"Payslip for {_recent_month_year(0)}",
             "sections": [
                 {
                     "heading": "Salary Computation",
@@ -680,7 +692,7 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
         r_sal,
         [{
             "title": "WIPRO LIMITED",
-            "subtitle": "Payslip for June 2026",
+            "subtitle": f"Payslip for {_recent_month_year(0)}",
             "sections": [
                 {
                     "heading": "Employee Earnings",
@@ -701,6 +713,150 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
     scenarios["missing_docs"] = s4_files
 
     return scenarios
+
+
+# =============================================================================
+# SCENARIO 5: Photographed / scanned documents (JPG + PNG upload demo)
+# =============================================================================
+# Proves the JPG/PNG -> PDF conversion and OCR fallback (see
+# app.document_ingestion.image_to_pdf / app.services.ocr): same borrower as
+# the clean-prime scenario, but the PAN and Aadhaar are supplied as photos
+# of the cards instead of text-layer PDFs.
+
+def _load_font(size: int):
+    """A real TrueType font OCRs far better than Pillow's tiny bitmap
+    default. Falls back gracefully if none of these are installed."""
+    from PIL import ImageFont
+
+    for candidate in (
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\calibri.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+    ):
+        if os.path.exists(candidate):
+            return ImageFont.truetype(candidate, size)
+    return ImageFont.load_default()
+
+
+def _create_image_document(
+    output_path: str,
+    title: str,
+    lines: List[tuple],
+    width: int = 1000,
+    height: int = 560,
+) -> str:
+    """Renders a simple card-style document (title + label/value lines) as
+    a JPG or PNG - standing in for a borrower's phone photo of a physical
+    document. Format is taken from `output_path`'s extension.
+
+    Each "Label: Value" is drawn as ONE text run on its own line rather than
+    two separately-positioned runs - a multi-column layout risks Tesseract
+    reading the columns out of row order (it reads by block, not strictly
+    top-to-bottom), which would misassign values to the wrong label.
+    """
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (width, max(height, 110 + 50 * len(lines))), "white")
+    d = ImageDraw.Draw(img)
+    full_height = img.height
+    d.rectangle([8, 8, width - 9, full_height - 9], outline=(60, 90, 130), width=3)
+
+    title_font = _load_font(26)
+    text_font = _load_font(24)
+
+    d.rectangle([8, 8, width - 9, 70], fill=(30, 58, 95))
+    d.text((28, 22), title, font=title_font, fill="white")
+
+    y = 110
+    for label, value in lines:
+        text = f"{label}: {value}" if label else str(value)
+        d.text((40, y), text, font=text_font, fill=(20, 30, 45))
+        y += 50
+
+    img.save(output_path)
+    return output_path
+
+
+def generate_image_demo_documents(base_dir: str = "mock_documents") -> List[str]:
+    """Same borrower and loan as the clean-prime scenario, but PAN
+    (PNG) and Aadhaar (JPG) are photographed/scanned images rather than
+    PDFs, so a demo run visibly exercises image -> PDF conversion + OCR."""
+    clean = generate_all_mock_scenarios(base_dir)["clean_prime"]
+    other_pdfs = [p for p in clean if "pan_card" not in p and "aadhaar_card" not in p]
+
+    img_dir = os.path.join(base_dir, "scenario_5_image_upload")
+    os.makedirs(img_dir, exist_ok=True)
+
+    pan_path = _create_image_document(
+        os.path.join(img_dir, "pan_card_aarav_sharma_photo.png"),
+        "INCOME TAX DEPARTMENT - GOVT. OF INDIA",
+        [
+            ("Permanent Account Number", "ABCPS1234F"),
+            ("Name", "Aarav Sharma"),
+            ("Father's Name", "Ramesh Sharma"),
+            ("Date of Birth", "14/08/1990"),
+        ],
+    )
+
+    aadhaar_path = _create_image_document(
+        os.path.join(img_dir, "aadhaar_card_aarav_sharma_photo.jpg"),
+        "UNIQUE IDENTIFICATION AUTHORITY OF INDIA",
+        [
+            ("Aadhaar Number", "XXXX-XXXX-8921"),
+            ("Name", "Aarav Sharma"),
+            ("Date of Birth", "14/08/1990"),
+            ("Gender", "MALE"),
+            ("Address", "Flat 402, Green Valley Apartments, Saravanampatti, Coimbatore"),
+            ("Pincode", "641035"),
+        ],
+        width=1200,
+    )
+
+    return [pan_path, aadhaar_path] + other_pdfs
+
+
+def generate_correctable_pan_scenario(base_dir: str = "mock_documents") -> List[str]:
+    """Same clean-prime borrower (Aarav Sharma), but the PAN card was
+    scanned/entered with a malformed PAN number ("NOT-A-VALID-PAN" instead
+    of "ABCPS1234F"). Every other document is identical to the clean-prime
+    scenario, which reaches APPROVE on its own.
+
+    A malformed PAN fails app.document_ingestion.validators' format check
+    (ERROR severity) and blocks approval. A reviewer corrects just the PAN
+    card's `pan_number` field (HITL override) and reruns - with that one
+    field fixed, validation passes and the application approves. Demonstrates
+    the document-correction workflow end to end."""
+    clean = generate_all_mock_scenarios(base_dir)["clean_prime"]
+
+    s6_dir = os.path.join(base_dir, "scenario_6_correctable_pan_error")
+    os.makedirs(s6_dir, exist_ok=True)
+
+    pan_p = os.path.join(s6_dir, "pan_card_aarav_sharma.pdf")
+    _create_pdf_document(
+        pan_p,
+        [{
+            "title": "INCOME TAX DEPARTMENT - GOVT. OF INDIA",
+            "subtitle": "Permanent Account Number Card (PAN)",
+            "sections": [
+                {
+                    "heading": "Taxpayer Information",
+                    "items": [
+                        ("Permanent Account Number", "NOT-A-VALID-PAN"),
+                        ("Name", "Aarav Sharma"),
+                        ("Father's Name", "Ramesh Sharma"),
+                        ("Date of Birth", "14/08/1990"),
+                        ("Signature", "Aarav Sharma (Verified Digital Signature)")
+                    ]
+                }
+            ],
+            "footer": "Income Tax Department, Government of India - Computer Generated Record"
+        }]
+    )
+
+    other_files = [p for p in clean if "pan_card" not in p]
+    return [pan_p] + other_files
+
 
 if __name__ == "__main__":
     generated = generate_all_mock_scenarios()

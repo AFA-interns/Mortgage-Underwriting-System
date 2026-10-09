@@ -10,4 +10,5 @@ class AgentState(TypedDict):
     confidence: dict
     risk_flags: List[str]
     human_review_required: bool
+    value_source: str
     explanation: str

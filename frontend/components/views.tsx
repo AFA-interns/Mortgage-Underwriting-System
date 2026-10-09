@@ -1,18 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  Activity, ArrowLeft, ArrowRight, Check, Clock3, CreditCard, FileCheck2, FileText, Home, Inbox,
-  Loader2, Plus, ShieldCheck, Sparkles, UploadCloud, X, Zap,
+  Activity, AlertCircle, ArrowLeft, ArrowRight, Check, Clock3, CreditCard, ExternalLink, FileCheck2,
+  FileText, GitBranch, Home, Inbox, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles,
+  UploadCloud, X, Zap,
 } from 'lucide-react'
 import {
-  documentUrl, formatInr, formatPct, formatSize, underwritingService,
-  type ApplicationView, type DemoScenario, type ReviewItem, type Stage,
+  documentUrl, formatInr, formatPct, formatSize, humanizeField, underwritingService,
+  type ApplicationView, type DemoScenario, type ParsedDocument, type ReviewItem, type Stage,
 } from '@/lib/underwriting-service'
 import { getDashboardMetrics } from '@/lib/dashboard-service'
 import { KeyValues, MetricBar, StatCard, StatusPill, stageTone, statusTone } from '@/components/ui-bits'
 
-export type View = 'dashboard' | 'applications' | 'new' | 'detail' | 'reports' | 'review' | 'final-report'
+export type View = 'dashboard' | 'applications' | 'new' | 'detail' | 'reports' | 'review' | 'final-report' | 'document-review'
 
 type Nav = { setView: (v: View) => void; open: (id: string) => void }
 
@@ -31,7 +32,7 @@ const NoApplication = ({ setView, title = 'No application yet' }: { setView: (v:
 
 /* -------------------------------------------------------------- documents */
 
-function DocumentLinks({ app }: { app: ApplicationView }) {
+function DocumentLinks({ app, onReview }: { app: ApplicationView; onReview?: (docId: string) => void }) {
   if (!app.document_files?.length) return <span className="muted">No stored documents.</span>
   return (
     <ul className="doc-links">
@@ -42,6 +43,11 @@ function DocumentLinks({ app }: { app: ApplicationView }) {
             <span>{d.filename.replace(/^\d{2}_/, '')}</span>
             <small>{d.type.replace(/_/g, ' ')} · {formatSize(d.size_bytes)}</small>
           </a>
+          {onReview && (
+            <button className="doc-review-trigger" data-testid="doc-review-trigger" onClick={() => onReview(d.id)} title="View and correct extracted fields">
+              <Pencil size={12} /> Review
+            </button>
+          )}
         </li>
       ))}
     </ul>
@@ -263,7 +269,7 @@ export function NewApplication({ setView, onDone }: { setView: (v: View) => void
 
 /* ---------------------------------------------------------------- detail */
 
-export function Detail({ app, setView }: { app: ApplicationView | null; setView: (v: View) => void }) {
+export function Detail({ app, setView, onReviewDocuments }: { app: ApplicationView | null; setView: (v: View) => void; onReviewDocuments?: (docId?: string) => void }) {
   const [active, setActive] = useState(0)
   if (!app) return <NoApplication setView={setView} title="No application selected" />
   const stage: Stage = app.stages[active] ?? app.stages[0]
@@ -275,11 +281,15 @@ export function Detail({ app, setView }: { app: ApplicationView | null; setView:
       <button className="back-link" onClick={() => setView('applications')}><ArrowLeft size={16} /> Back to applications</button>
       <div className="detail-heading">
         <div>
-          <div className="id-line"><span data-testid="detail-id">{app.id}</span><StatusPill tone={statusTone(app.status)}>{app.status}</StatusPill></div>
+          <div className="id-line">
+            <span data-testid="detail-id">{app.id}</span><StatusPill tone={statusTone(app.status)}>{app.status}</StatusPill>
+            {app.revised_from && <span className="revision-badge" data-testid="revision-badge"><GitBranch size={12} /> Revision of {app.revised_from}</span>}
+          </div>
           <h2>{app.borrower}</h2>
           <p className="muted">{app.property_type} · {app.property_label}</p>
         </div>
         <div className="detail-actions">
+          {onReviewDocuments && <button className="secondary-button" onClick={() => onReviewDocuments(undefined)}><Pencil size={15} /> Review documents</button>}
           <button className="secondary-button" onClick={() => setView('reports')}>Agent reports</button>
           <button className="primary-button" onClick={() => setView('final-report')}>Final report</button>
         </div>
@@ -291,8 +301,8 @@ export function Detail({ app, setView }: { app: ApplicationView | null; setView:
       </div>
 
       <section className="panel doc-panel" data-testid="doc-panel">
-        <div><h3>Submitted documents</h3><p className="muted">Stored source PDFs, open them to verify the extracted data.</p></div>
-        <DocumentLinks app={app} />
+        <div><h3>Submitted documents</h3><p className="muted">Stored source PDFs — open to verify, or review to correct a misread field.</p></div>
+        <DocumentLinks app={app} onReview={onReviewDocuments ? (docId) => onReviewDocuments(docId) : undefined} />
       </section>
 
       <div className="detail-metrics">
@@ -482,7 +492,7 @@ export function AgentReports({ app, setView }: { app: ApplicationView | null; se
 
 /* ---------------------------------------------------------- human review */
 
-export function HumanReview({ apps, setView, open, onChanged }: { apps: ApplicationView[]; setView: (v: View) => void; open: (id: string) => void; onChanged: () => void }) {
+export function HumanReview({ apps, setView, open, onChanged, onReviewDocuments }: { apps: ApplicationView[]; setView: (v: View) => void; open: (id: string) => void; onChanged: () => void; onReviewDocuments?: (appId: string, docId?: string) => void }) {
   const [items, setItems] = useState<ReviewItem[] | null>(null)
   useEffect(() => { underwritingService.listReviewItems().then(setItems).catch(() => setItems([])) }, [])
   if (items === null) return <div className="page-content"><div className="panel loading-state">Loading review queue…</div></div>
@@ -510,7 +520,15 @@ export function HumanReview({ apps, setView, open, onChanged }: { apps: Applicat
                 <StatusPill tone={item.status === 'Resolved' ? 'green' : item.severity === 'High' ? 'amber' : 'blue'}>{item.status}</StatusPill>
               </div>
               <p>{item.evidence}</p>
-              {apps.find((a) => a.id === item.application_id) && <div className="review-docs"><span>Documents to check</span><DocumentLinks app={apps.find((a) => a.id === item.application_id)!} /></div>}
+              {apps.find((a) => a.id === item.application_id) && (
+                <div className="review-docs">
+                  <span>Documents to check</span>
+                  <DocumentLinks
+                    app={apps.find((a) => a.id === item.application_id)!}
+                    onReview={onReviewDocuments ? (docId) => onReviewDocuments(item.application_id, docId) : undefined}
+                  />
+                </div>
+              )}
               <div className="review-meta"><span>Owner <strong>{item.owner}</strong></span><span>Severity <strong>{item.severity}</strong></span></div>
               {item.status !== 'Resolved'
                 ? <button className="secondary-button" onClick={() => resolve(item.id)}><Check size={15} /> Mark resolved</button>
@@ -520,6 +538,190 @@ export function HumanReview({ apps, setView, open, onChanged }: { apps: Applicat
         </div>
       )}
       <div className="review-next"><div><Sparkles size={20} /><div><strong>Final decision</strong><span>Open an application&apos;s final report to see the recommendation and conditions.</span></div></div><button className="primary-button" onClick={() => setView('final-report')}>Open final report <ArrowRight size={15} /></button></div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------- document review */
+// Standard document-extraction-review layout: the source document on the
+// left, its extracted fields as an editable form on the right. A reviewer
+// fixes a field OCR or regex extraction got wrong, saves it, and re-runs
+// the pipeline — the correction is applied before validation, so it flows
+// into every downstream agent exactly as if extraction had gotten it right.
+
+const toDraft = (fields: Record<string, unknown>): Record<string, string> =>
+  Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, v === null || v === undefined ? '' : String(v)]))
+
+const normalize = (v: unknown): string => (v === null || v === undefined || v === '' ? '' : String(v))
+
+export function DocumentReview({
+  app, initialDocId, setView, onRerun,
+}: {
+  app: ApplicationView | null
+  initialDocId?: string
+  setView: (v: View) => void
+  onRerun: (newApp: ApplicationView) => void
+}) {
+  const docs = useMemo(() => app?.document_files ?? [], [app])
+  const [activeDocId, setActiveDocId] = useState(initialDocId ?? docs[0]?.id ?? '')
+  const [parsed, setParsed] = useState<ParsedDocument | null>(null)
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
+  const [rerunning, setRerunning] = useState(false)
+  const [rerunError, setRerunError] = useState('')
+
+  // Re-sync when the parent hands us a different application or target document.
+  useEffect(() => {
+    setActiveDocId((prev) => (initialDocId ?? (docs.some((d) => d.id === prev) ? prev : docs[0]?.id)) ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app?.id, initialDocId])
+
+  useEffect(() => {
+    if (!app || !activeDocId) { setParsed(null); return }
+    setLoading(true); setLoadError(''); setSaveMessage('')
+    underwritingService.getParsedDocument(app.id, activeDocId)
+      .then((p) => { setParsed(p); setDraft(toDraft(p.effective_fields)) })
+      .catch((e) => { setParsed(null); setLoadError(e instanceof Error ? e.message : 'No extracted fields for this document.') })
+      .finally(() => setLoading(false))
+  }, [app?.id, activeDocId])
+
+  const fieldTypes = useMemo(() => {
+    const t: Record<string, 'number' | 'text'> = {}
+    if (parsed) for (const f of parsed.editable_fields) t[f] = typeof parsed.extracted_fields[f] === 'number' ? 'number' : 'text'
+    return t
+  }, [parsed])
+
+  const coerce = (field: string, value: string): unknown => {
+    if (fieldTypes[field] !== 'number') return value
+    if (value.trim() === '') return null
+    const n = Number(value)
+    return Number.isNaN(n) ? value : n
+  }
+
+  const changedFromExtracted = (field: string): boolean =>
+    !!parsed && normalize(coerce(field, draft[field] ?? '')) !== normalize(parsed.extracted_fields[field])
+
+  const isDirty = !!parsed && parsed.editable_fields.some(
+    (f) => normalize(coerce(f, draft[f] ?? '')) !== normalize(parsed.effective_fields[f])
+  )
+
+  const save = async () => {
+    if (!app || !parsed) return
+    setSaving(true); setSaveMessage('')
+    try {
+      const overrides: Record<string, unknown> = {}
+      for (const f of parsed.editable_fields) if (changedFromExtracted(f)) overrides[f] = coerce(f, draft[f] ?? '')
+      const updated = await underwritingService.saveDocumentOverrides(app.id, activeDocId, overrides)
+      setParsed(updated)
+      setDraft(toDraft(updated.effective_fields))
+      setSaveMessage(Object.keys(overrides).length ? 'Corrections saved — re-run to apply them.' : 'Reverted to the original extracted values.')
+    } catch (e) {
+      setSaveMessage(e instanceof Error ? e.message : 'Could not save corrections.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const rerun = async () => {
+    if (!app) return
+    setRerunning(true); setRerunError('')
+    try {
+      onRerun(await underwritingService.rerunApplication(app.id))
+    } catch (e) {
+      setRerunError(e instanceof Error ? e.message : 'Re-run failed.')
+    } finally {
+      setRerunning(false)
+    }
+  }
+
+  if (!app) return <NoApplication setView={setView} title="No application to review" />
+  const activeDoc = docs.find((d) => d.id === activeDocId)
+
+  return (
+    <div className="page-content document-review-page">
+      <button className="back-link" onClick={() => setView('detail')}><ArrowLeft size={16} /> Back to {app.id}</button>
+      <div className="page-intro">
+        <div>
+          <p className="section-kicker">{app.id} · {app.borrower}</p>
+          <h2>Review documents</h2>
+          <p className="muted">Check each document&apos;s extracted fields against the source. Correct anything misread, save it, then re-run the pipeline.</p>
+        </div>
+        <button className="primary-button" data-testid="rerun-button" disabled={rerunning || docs.length === 0} onClick={rerun}>
+          {rerunning ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} Re-run with corrections
+        </button>
+      </div>
+      {rerunError && <div className="form-error" role="alert">{rerunError}</div>}
+
+      {docs.length === 0 ? (
+        <div className="panel empty-state"><FileText size={25} /><strong>No stored documents</strong><span>This application has no documents to review.</span></div>
+      ) : (
+        <>
+          <div className="doc-review-tabs" role="tablist">
+            {docs.map((d) => (
+              <button key={d.id} role="tab" aria-selected={d.id === activeDocId} data-testid={`review-tab-${d.id}`}
+                className={`doc-review-tab ${d.id === activeDocId ? 'active' : ''}`} onClick={() => setActiveDocId(d.id)}>
+                <span>{d.type.replace(/_/g, ' ')}</span>
+                <small>{d.filename.replace(/^\d{2}_/, '')}</small>
+                {d.has_parsed_fields === false && <AlertCircle size={12} className="tab-flag" />}
+              </button>
+            ))}
+          </div>
+
+          <div className="doc-review-split">
+            <section className="panel doc-review-preview">
+              <div className="doc-review-preview-header">
+                <span>{activeDoc?.filename.replace(/^\d{2}_/, '') ?? 'Document'}</span>
+                <a href={documentUrl(app.id, activeDocId)} target="_blank" rel="noreferrer"><ExternalLink size={13} /> Open in new tab</a>
+              </div>
+              <iframe title={`${activeDoc?.filename ?? 'document'} preview`} src={documentUrl(app.id, activeDocId)} className="doc-review-iframe" />
+            </section>
+
+            <section className="panel doc-review-form">
+              {loading && <div className="loading-state">Loading extracted fields…</div>}
+              {!loading && loadError && (
+                <div className="empty-state small"><AlertCircle size={20} /><strong>No extracted fields</strong><span>{loadError}</span></div>
+              )}
+              {!loading && !loadError && parsed && (
+                <>
+                  <div className="doc-review-form-header">
+                    <h3>{parsed.doc_type.replace(/_/g, ' ')}</h3>
+                    {Object.keys(parsed.overrides).length > 0 && <StatusPill tone="amber">{Object.keys(parsed.overrides).length} corrected</StatusPill>}
+                  </div>
+                  {parsed.editable_fields.length === 0 ? (
+                    <p className="muted">No reviewer-editable fields for this document type.</p>
+                  ) : (
+                    <div className="field-form">
+                      {parsed.editable_fields.map((f) => {
+                        const corrected = f in parsed.overrides
+                        return (
+                          <label key={f} className={`field-row ${corrected ? 'corrected' : ''}`}>
+                            <span className="field-label">{humanizeField(f)}{corrected && <span className="field-badge">Corrected</span>}</span>
+                            <input
+                              type={fieldTypes[f] === 'number' ? 'number' : 'text'}
+                              value={draft[f] ?? ''}
+                              onChange={(e) => setDraft((prev) => ({ ...prev, [f]: e.target.value }))}
+                            />
+                            {corrected && <small className="field-hint">Originally extracted: {String(parsed.extracted_fields[f] ?? '—')}</small>}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <div className="doc-review-form-actions">
+                    {saveMessage && <span className="save-message">{saveMessage}</span>}
+                    <button className="secondary-button" disabled={saving || !isDirty} onClick={() => void save()}>
+                      {saving ? <Loader2 className="spin" size={15} /> : <Check size={15} />} Save corrections
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
+        </>
+      )}
     </div>
   )
 }

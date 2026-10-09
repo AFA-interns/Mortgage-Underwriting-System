@@ -10,14 +10,18 @@ from __future__ import annotations
 import logging
 import math
 import os
+import shutil
+import tempfile
 import threading
 import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from app.document_ingestion.field_overrides import editable_fields_for, validate_overrides
 from app.graph.workflow import build_underwriting_graph
-from app.services.credit_bureau import SOURCE_DEMO
+from app.models.document_ingestion import DocumentType
+from app.services.credit_bureau import SOURCE_DEMO, resolve_bureau_data
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +80,29 @@ DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
         },
         "bureau": {**_CLEAN_BUREAU, "cibil_score": 690},
     },
+    "image_upload": {
+        "label": "Scanned documents (JPG/PNG)",
+        "description": "Same clean borrower, but PAN (PNG) and Aadhaar (JPG) are uploaded as photographed images — demonstrates image → PDF conversion and OCR.",
+        "generator": "image_demo",
+        "profile": {
+            "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
+            "loan_amount": 5_000_000, "loan_tenure_months": 240,
+            "property_value": 7_500_000, "existing_debt": 15000,
+        },
+        "bureau": _CLEAN_BUREAU,
+    },
+    "correctable_pan_error": {
+        "label": "Correctable PAN error (HITL demo)",
+        "description": "Clean borrower, but the PAN card has a malformed PAN number. "
+                        "Blocks approval until a reviewer corrects the PAN number field and reruns.",
+        "generator": "correctable_pan_error",
+        "profile": {
+            "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
+            "loan_amount": 5_000_000, "loan_tenure_months": 240,
+            "property_value": 7_500_000, "existing_debt": 15000,
+        },
+        "bureau": _CLEAN_BUREAU,
+    },
 }
 
 
@@ -89,6 +116,8 @@ class ApplicationStore:
         self._lock = threading.Lock()
         self._apps: dict[str, dict[str, Any]] = {}
         self._docs: dict[tuple[str, str], tuple[str, bytes]] = {}
+        self._parsed: dict[tuple[str, str], dict[str, Any]] = {}
+        self._overrides: dict[tuple[str, str], dict[str, Any]] = {}
         self._counter = 0
 
     def next_id(self) -> str:
@@ -110,6 +139,23 @@ class ApplicationStore:
 
     def get_document(self, application_id: str, doc_id: str) -> tuple[str, bytes] | None:
         return self._docs.get((application_id, doc_id))
+
+    def save_parsed_fields(self, application_id: str, doc_id: str, parsed: dict[str, Any]) -> None:
+        with self._lock:
+            self._parsed[(application_id, doc_id)] = parsed
+
+    def get_parsed_fields(self, application_id: str, doc_id: str) -> dict[str, Any] | None:
+        return self._parsed.get((application_id, doc_id))
+
+    def save_override(self, application_id: str, doc_id: str, overrides: dict[str, Any]) -> bool:
+        if (application_id, doc_id) not in self._docs:
+            return False
+        with self._lock:
+            self._overrides[(application_id, doc_id)] = overrides
+        return True
+
+    def get_override(self, application_id: str, doc_id: str) -> dict[str, Any] | None:
+        return self._overrides.get((application_id, doc_id))
 
     def list(self) -> list[dict[str, Any]]:
         return sorted(self._apps.values(), key=lambda a: a["created_at"], reverse=True)
@@ -335,18 +381,34 @@ def run_application(
     bureau: dict[str, Any] | None = None,
     source: str = "upload",
     bureau_consent: bool = False,
+    field_overrides: dict[str, dict[str, Any]] | None = None,
+    revised_from: str | None = None,
 ) -> dict[str, Any]:
-    """Runs the full pipeline (ingestion -> credit/property/compliance -> decision)."""
+    """Runs the full pipeline (ingestion -> credit/property/compliance -> decision).
+
+    `field_overrides` (keyed by entry in `file_paths`) carries human-review
+    corrections into this run's document ingestion — see
+    app.document_ingestion.field_overrides. `revised_from` marks this as a
+    /rerun of an earlier application (kept for the audit trail; the earlier
+    application is never modified).
+    """
     app_id = store.next_id()
     started = time.time()
+
+    # Resolved once, here, rather than left to credit_node's own fallback,
+    # so the exact bureau data used can be persisted and reused by a later
+    # /rerun — a rerun should isolate the effect of a document correction,
+    # not also silently roll a new simulated credit score.
+    resolved_bureau = bureau or resolve_bureau_data(app_id)
+
     state: dict[str, Any] = {
         "application_id": app_id,
         "raw_document_paths": file_paths,
         "borrower_profile": profile,
+        "credit_bureau_data": resolved_bureau,
+        "field_overrides": field_overrides or {},
         "errors": [],
     }
-    if bureau:
-        state["credit_bureau_data"] = bureau
 
     graph = build_underwriting_graph().compile()
     result = graph.invoke(state)
@@ -356,18 +418,24 @@ def run_application(
         d.get("filename"): d.get("type", "UNKNOWN")
         for d in (result.get("document_analysis") or {}).get("documents", [])
     }
+    parsed_by_name = (result.get("doc_ingestion_output") or {}).get("parsed_entities") or {}
     stored: list[dict[str, Any]] = []
     for path, name in zip(file_paths, file_names):
         with open(path, "rb") as fh:
             content = fh.read()
+        basename = os.path.basename(path)
         stored.append({
             "id": uuid.uuid4().hex,
             "filename": name,
-            "type": str(getattr(t := type_by_name.get(os.path.basename(path), "UNKNOWN"), "value", t)),
+            "type": str(getattr(t := type_by_name.get(basename, "UNKNOWN"), "value", t)),
             "content": content,
+            "parsed": parsed_by_name.get(basename),
         })
     document_files = [
-        {"id": d["id"], "filename": d["filename"], "type": d["type"], "size_bytes": len(d["content"])}
+        {
+            "id": d["id"], "filename": d["filename"], "type": d["type"], "size_bytes": len(d["content"]),
+            "has_parsed_fields": d["parsed"] is not None,
+        }
         for d in stored
     ]
 
@@ -379,6 +447,135 @@ def run_application(
         "given": bool(bureau_consent),
         "recorded_at": datetime.now(UTC).isoformat(),
     }
+    view["credit_bureau_used"] = resolved_bureau
+    view["revised_from"] = revised_from
     store.save(view)
-    store.save_documents(app_id, stored)
+    store.save_documents(app_id, [{k: v for k, v in d.items() if k != "parsed"} for d in stored])
+    for d in stored:
+        if d["parsed"] is not None:
+            store.save_parsed_fields(app_id, d["id"], d["parsed"])
     return view
+
+
+def materialize_image_paths(paths: list[str]) -> tuple[list[str], list[str]]:
+    """Converts any .jpg/.jpeg/.png entries to PDF (same conversion the
+    upload endpoint applies) so a demo scenario that includes photographed
+    documents stores and displays exactly like a real image upload would.
+    Non-image paths pass through unchanged. Returns (file_paths, file_names).
+    """
+    from app.document_ingestion.image_to_pdf import convert_image_to_pdf
+
+    converted: list[str] = []
+    display_names: list[str] = []
+    for p in paths:
+        if p.lower().endswith((".jpg", ".jpeg", ".png")):
+            converted.append(convert_image_to_pdf(p))
+            display_names.append(os.path.splitext(os.path.basename(p))[0] + ".pdf")
+        else:
+            converted.append(p)
+            display_names.append(os.path.basename(p))
+    return converted, display_names
+
+
+def _profile_from_view(view: dict[str, Any]) -> dict[str, Any]:
+    """Reconstructs the borrower_profile dict run_application was given,
+    from what build_view stored under `loan` — used by rerun_application."""
+    loan = view.get("loan") or {}
+    return {
+        "name": view.get("borrower"),
+        "monthly_income": loan.get("monthly_income"),
+        "employment_type": loan.get("employment_type"),
+        "loan_amount": loan.get("amount"),
+        "loan_tenure_months": loan.get("tenure_months"),
+        "property_value": loan.get("declared_property_value"),
+        "existing_debt": loan.get("existing_debt"),
+    }
+
+
+def rerun_application(application_id: str) -> dict[str, Any]:
+    """Re-runs the full pipeline for an existing application, re-using its
+    stored documents and borrower profile, with any saved human-review field
+    overrides applied. Produces a NEW application (linked via
+    `revised_from`); the original is left untouched as an audit record.
+
+    Raises KeyError if the application doesn't exist, ValueError if it has
+    no stored documents to re-run.
+    """
+    original = store.get(application_id)
+    if original is None:
+        raise KeyError(application_id)
+
+    doc_files = original.get("document_files") or []
+    if not doc_files:
+        raise ValueError(f"Application '{application_id}' has no stored documents to re-run.")
+
+    tmp_dir = tempfile.mkdtemp(prefix="uw_rerun_")
+    try:
+        file_paths: list[str] = []
+        file_names: list[str] = []
+        overrides_by_path: dict[str, dict[str, Any]] = {}
+        for i, doc in enumerate(doc_files):
+            found = store.get_document(application_id, doc["id"])
+            if found is None:
+                continue
+            filename, content = found
+            dest = os.path.join(tmp_dir, f"{i:02d}_{filename}")
+            with open(dest, "wb") as fh:
+                fh.write(content)
+            file_paths.append(dest)
+            file_names.append(filename)
+            override = store.get_override(application_id, doc["id"])
+            if override:
+                overrides_by_path[dest] = override
+
+        if not file_paths:
+            raise ValueError(f"Application '{application_id}'s stored documents could not be re-read.")
+
+        return run_application(
+            profile=_profile_from_view(original),
+            file_paths=file_paths,
+            file_names=file_names,
+            bureau=original.get("credit_bureau_used"),
+            source=f"rerun:{application_id}",
+            bureau_consent=(original.get("bureau_consent") or {}).get("given", False),
+            field_overrides=overrides_by_path,
+            revised_from=application_id,
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def get_parsed_document(application_id: str, doc_id: str) -> dict[str, Any] | None:
+    """GET /applications/{id}/documents/{doc_id}/parsed payload, or None if
+    this document has no parsed content (unsupported type, nothing extracted,
+    or the document/application doesn't exist)."""
+    parsed = store.get_parsed_fields(application_id, doc_id)
+    if parsed is None:
+        return None
+    overrides = store.get_override(application_id, doc_id) or {}
+    fields = parsed.get("fields", {})
+    return {
+        "application_id": application_id,
+        "document_id": doc_id,
+        "doc_type": parsed.get("doc_type"),
+        "editable_fields": list(editable_fields_for(DocumentType(parsed["doc_type"]))),
+        "extracted_fields": fields,
+        "overrides": overrides,
+        "effective_fields": {**fields, **overrides},
+    }
+
+
+def save_document_overrides(application_id: str, doc_id: str, overrides: dict[str, Any]) -> dict[str, str] | None:
+    """Validates and saves reviewer corrections for one document.
+
+    Returns None on success, or {field: reason} for the first problem found
+    (unknown document, or a field outside that document type's whitelist).
+    """
+    parsed = store.get_parsed_fields(application_id, doc_id)
+    if parsed is None:
+        return {"document_id": "No parsed content found for this document."}
+    bad = validate_overrides(DocumentType(parsed["doc_type"]), overrides)
+    if bad:
+        return bad
+    store.save_override(application_id, doc_id, overrides)
+    return None

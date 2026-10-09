@@ -196,6 +196,15 @@ class ConfidenceEvaluator:
                     if priority == "NONE":
                         priority = "MEDIUM"
 
+        # Check payslip recency
+        if salary_slips:
+            for i, s in enumerate(salary_slips):
+                if not s.is_recent:
+                    reasons.append(f"Payslip #{i+1} ({s.month_year}): {s.recency_message}")
+                    actions.append("Request a current payslip within the required recency window.")
+                    if priority == "NONE":
+                        priority = "MEDIUM"
+
         # Check bank statement bounces
         if bank_statement and bank_statement.bounce_cheque_count > 0:
             reasons.append(f"Detected {bank_statement.bounce_cheque_count} inward ECS/cheque bounce(s) in bank statement.")
