@@ -27,6 +27,7 @@ The Credit Analysis Agent sits between Document Ingestion and Property Valuation
 15. [KYC / PAN Note](#kyc--pan-note)
 16. [What's Stubbed](#whats-stubbed)
 17. [Tests](#tests)
+18. [Evaluation metrics](#evaluation-metrics)
 
 ---
 
@@ -343,7 +344,27 @@ pytest tests/test_credit_*.py -v
 | `test_credit_stability.py` | Stability classification by employment type + flags |
 | `test_credit_scoring.py` | All decision-rule branches, confidence bounds, risk score bounds |
 | `test_credit_crew.py` | Summary builder content (no real LLM call) |
+| `test_credit_metrics_module.py` | Metrics module: AUC/Gini/KS, PSI, AIR, agreement matrix, bureau mix, confidence formula |
+| `test_credit_correctness_metrics.py` | Determinism, risk-score monotonicity, one test per decision-rule branch (real `credit_node`) |
 | `test_credit_node.py` | Full node - salaried approve, self-employed FOIR reject, NA-history conditional, red-flag reject, missing-data error path, LTV wiring (LLM reasoning monkeypatched) |
+
+---
+
+## Evaluation metrics
+
+Measurement code for judging the agent (bureau-source mix, flag rates, decision distribution, confidence checks, Credit-vs-Decision agreement, adverse impact ratio, PSI drift, and AUC/Gini/KS once outcomes exist) lives in `backend/app/credit/metrics.py`. It only observes the agent's output and never changes a rule, weight or threshold. Formulas, targets and what each metric needs are in [CREDIT_METRICS.md](CREDIT_METRICS.md).
+
+```bash
+cd backend
+# unit tests for the metrics + correctness checks on the real credit_node
+pytest tests/test_credit_*.py -q
+
+# report from an exported file (export SQL is in the script's docstring)
+python scripts/credit_metrics_report.py --input applications.jsonl
+python scripts/credit_metrics_report.py --input batch2.jsonl --baseline baseline.json
+```
+
+Outcome metrics (AUC, Gini, KS, calibration) report "not available" until closed-loan outcomes are captured; see "What to start capturing" in CREDIT_METRICS.md.
 
 ---
 
