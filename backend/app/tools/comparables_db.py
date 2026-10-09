@@ -9,6 +9,7 @@ from property_data.database.models import PropertyListingDB
 
 
 def normalize_property_type(property_type: str) -> str:
+    """Normalize property type to a standard form for comparison."""
     value = str(property_type).lower().strip()
 
     if any(
@@ -22,16 +23,21 @@ def normalize_property_type(property_type: str) -> str:
     ):
         return "apartment"
 
-    if "independent house" in value:
+    if "independent house" in value or "independent floor" in value:
         return "independent house"
 
     if "villa" in value:
         return "villa"
 
-    if "plot" in value:
+    if "plot" in value or "land" in value:
         return "plot"
 
     return value
+
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def get_comparables(
@@ -40,13 +46,30 @@ async def get_comparables(
     property_type: str,
     bhk: int,
     area_sqft: float,
+    min_quality_score: float = 40.0,
+    max_results: int = 20,
 ) -> list[dict[str, Any]]:
     """
     Get comparable properties from PostgreSQL.
 
-    Data sources currently include:
-    - Square Yards ingested listings
-    - Other property listings stored in property_listings
+    Data sources include:
+    - SquareYards, Housing.com, MagicBricks (via scraper pipeline)
+    - Enriched CSV imports
+    - Any source stored in property_listings table
+
+    Args:
+        locality: Locality or neighborhood name
+        city: City name
+        property_type: Property type (Apartment, Villa, etc.)
+        bhk: Number of bedrooms
+        area_sqft: Subject property area in sqft
+        min_quality_score: Minimum data quality score (0-100). Listings
+            below this threshold are excluded. Default 40.0.
+        max_results: Maximum number of comparables to return. Default 20.
+
+    Returns:
+        List of comparable property dicts, sorted by quality score
+        then area similarity. Each dict includes data_quality_score.
     """
 
     if not city or not locality:
@@ -55,17 +78,51 @@ async def get_comparables(
     city_clean = city.strip()
     locality_clean = locality.strip()
 
+    # Normalize city name variations
+    city_aliases = {
+        "bangalore": "Bengaluru",
+        "bengaluru": "Bengaluru",
+        "mumbai": "Mumbai",
+        "delhi": "Delhi",
+        "new delhi": "Delhi",
+        "hyderabad": "Hyderabad",
+        "chennai": "Chennai",
+        "pune": "Pune",
+        "kolkata": "Kolkata",
+        "ahmedabad": "Ahmedabad",
+        "jaipur": "Jaipur",
+        "lucknow": "Lucknow",
+        "gurgaon": "Gurgaon",
+        "gurugram": "Gurgaon",
+        "noida": "Noida",
+        "thane": "Thane",
+        "navi mumbai": "Navi Mumbai",
+        "ghaziabad": "Ghaziabad",
+        "faridabad": "Faridabad",
+        "greater noida": "Greater Noida",
+    }
+    city_normalized = city_aliases.get(city_clean.lower(), city_clean)
+
     property_type_clean = normalize_property_type(property_type)
 
-    async with AsyncSessionLocal() as session:
-        query = select(PropertyListingDB).where(
-            PropertyListingDB.city.ilike(city_clean),
-            PropertyListingDB.locality.ilike(locality_clean),
-            PropertyListingDB.transaction_type == "Sale",
-        )
+    try:
+        async with AsyncSessionLocal() as session:
+            query = select(PropertyListingDB).where(
+                PropertyListingDB.city.ilike(city_normalized),
+                PropertyListingDB.locality.ilike(locality_clean),
+                PropertyListingDB.transaction_type == "Sale",
+            )
 
-        result = await session.execute(query)
-        listings = result.scalars().all()
+            result = await session.execute(query)
+            listings = result.scalars().all()
+
+            # Expunge all objects from session to avoid session-related issues
+            for listing in listings:
+                session.expunge(listing)
+
+    except Exception as e:
+        logger.error(f"Database error in get_comparables: {e}")
+        return []
 
     comparables: list[dict[str, Any]] = []
 
@@ -79,8 +136,8 @@ async def get_comparables(
             listing.property_type or ""
         )
 
-        # Property type must match.
-        if listing_type != property_type_clean:
+        # Property type must match (case-insensitive).
+        if listing_type.lower() != property_type_clean.lower():
             continue
 
         # BHK must match when both are available.
@@ -111,6 +168,11 @@ async def get_comparables(
             listing.price is None
             or listing.price <= 0
         ):
+            continue
+
+        # Quality score filter.
+        quality_score = listing.data_quality_score or 0.0
+        if quality_score < min_quality_score:
             continue
 
         # Calculate price per sqft if not already stored.
@@ -147,19 +209,30 @@ async def get_comparables(
                 "floor": listing.floor,
                 "total_floors": listing.total_floors,
                 "parking": listing.parking,
+                "data_quality_score": quality_score,
+                "source_count": listing.source_count or 1,
+                "imputed_fields": listing.imputed_fields or [],
             }
         )
 
     # ---------------------------------------------------------
-    # Sort by similarity of area
+    # Sort by quality score (desc), then area similarity (asc)
     # ---------------------------------------------------------
 
     if area_sqft:
         comparables.sort(
-            key=lambda item: abs(
-                (item["area_sqft"] or area_sqft)
-                - area_sqft
+            key=lambda item: (
+                -item.get("data_quality_score", 0),
+                abs(
+                    (item["area_sqft"] or area_sqft)
+                    - area_sqft
+                ),
             )
         )
+    else:
+        comparables.sort(
+            key=lambda item: -item.get("data_quality_score", 0)
+        )
 
-    return comparables
+    # Limit results
+    return comparables[:max_results]

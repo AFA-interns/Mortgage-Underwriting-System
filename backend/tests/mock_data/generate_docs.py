@@ -507,6 +507,40 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
 
     s2_files.append(p_sal)
 
+    # 3. Property Sale Deed
+    p_deed = os.path.join(s2_dir, "property_sale_deed_bengaluru.pdf")
+    _create_pdf_document(
+        p_deed,
+        [{
+            "title": "GOVERNMENT OF KARNATAKA - DEPARTMENT OF STAMPS & REGISTRATION",
+            "subtitle": "Deed of Absolute Sale for Residential Apartment",
+            "sections": [
+                {
+                    "heading": "Parties to the Agreement",
+                    "items": [
+                        ("Document Title", "Sale Deed"),
+                        ("Registration Number", "BLR-BEL-3821/2026"),
+                        ("Vendor / Developer", "Green Glen Developers Pvt Ltd"),
+                        ("Purchaser / Buyer", "Priya S. Patel"),
+                        ("Property Type", "Apartment")
+                    ]
+                },
+                {
+                    "heading": "Schedule Property Specifications",
+                    "items": [
+                        ("Property Address", "A-302, Green Glen Layout, Bellandur, Bengaluru, Karnataka, PIN: 560103"),
+                        ("Super Built-up Area", "1,200.00 Sq. Ft."),
+                        ("Carpet Area", "950.00 Sq. Ft."),
+                        ("Consideration Amount", "INR 60,00,000.00"),
+                        ("Stamp Duty Paid", "INR 3,00,000.00")
+                    ]
+                }
+            ],
+            "footer": "Office of the Sub-Registrar, Bellandur, Bengaluru | Registered & Sealed"
+        }]
+    )
+    s2_files.append(p_deed)
+
     scenarios["name_discrepancy"] = s2_files
 
     # =========================================================================
@@ -632,6 +666,40 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
 
     s3_files.append(v_bank)
 
+    # 4. Property Sale Deed
+    v_deed = os.path.join(s3_dir, "property_sale_deed_bengaluru.pdf")
+    _create_pdf_document(
+        v_deed,
+        [{
+            "title": "GOVERNMENT OF KARNATAKA - DEPARTMENT OF STAMPS & REGISTRATION",
+            "subtitle": "Deed of Absolute Sale for Residential Apartment",
+            "sections": [
+                {
+                    "heading": "Parties to the Agreement",
+                    "items": [
+                        ("Document Title", "Sale Deed"),
+                        ("Registration Number", "BLR-IND-5521/2026"),
+                        ("Vendor / Developer", "Prestige Estates Projects Ltd"),
+                        ("Purchaser / Buyer", "Vikram Malhotra"),
+                        ("Property Type", "Apartment")
+                    ]
+                },
+                {
+                    "heading": "Schedule Property Specifications",
+                    "items": [
+                        ("Property Address", "Unit 805, Prestige Towers, Indiranagar, Bengaluru, Karnataka, PIN: 560038"),
+                        ("Super Built-up Area", "1,500.00 Sq. Ft."),
+                        ("Carpet Area", "1,200.00 Sq. Ft."),
+                        ("Consideration Amount", "INR 75,00,000.00"),
+                        ("Stamp Duty Paid", "INR 3,75,000.00")
+                    ]
+                }
+            ],
+            "footer": "Office of the Sub-Registrar, Indiranagar, Bengaluru | Registered & Sealed"
+        }]
+    )
+    s3_files.append(v_deed)
+
     scenarios["salary_discrepancy"] = s3_files
 
     # =========================================================================
@@ -698,6 +766,40 @@ def generate_all_mock_scenarios(base_dir: str = "mock_documents") -> Dict[str, L
     )
 
     s4_files.append(r_sal)
+
+    # 3. Property Sale Deed
+    r_deed = os.path.join(s4_dir, "property_sale_deed_bengaluru.pdf")
+    _create_pdf_document(
+        r_deed,
+        [{
+            "title": "GOVERNMENT OF KARNATAKA - DEPARTMENT OF STAMPS & REGISTRATION",
+            "subtitle": "Deed of Absolute Sale for Residential Apartment",
+            "sections": [
+                {
+                    "heading": "Parties to the Agreement",
+                    "items": [
+                        ("Document Title", "Sale Deed"),
+                        ("Registration Number", "BLR-KOR-2190/2026"),
+                        ("Vendor / Developer", "Sobha Limited"),
+                        ("Purchaser / Buyer", "Rahul Verma"),
+                        ("Property Type", "Apartment")
+                    ]
+                },
+                {
+                    "heading": "Schedule Property Specifications",
+                    "items": [
+                        ("Property Address", "C-501, Sobha Arena, Koramangala, Bengaluru, Karnataka, PIN: 560034"),
+                        ("Super Built-up Area", "1,300.00 Sq. Ft."),
+                        ("Carpet Area", "1,050.00 Sq. Ft."),
+                        ("Consideration Amount", "INR 65,00,000.00"),
+                        ("Stamp Duty Paid", "INR 3,25,000.00")
+                    ]
+                }
+            ],
+            "footer": "Office of the Sub-Registrar, Koramangala, Bengaluru | Registered & Sealed"
+        }]
+    )
+    s4_files.append(r_deed)
 
     scenarios["missing_docs"] = s4_files
 

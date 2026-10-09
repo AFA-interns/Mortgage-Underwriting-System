@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from app.graph.workflow import build_underwriting_graph
@@ -87,7 +88,7 @@ for scenario_name, pdf_paths in scenarios.items():
 
     try:
 
-        result = app.invoke(initial_state)
+        result = asyncio.run(app.ainvoke(initial_state))
 
         decision = result.get("decision", {})
 

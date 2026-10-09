@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.services.avnester import search_properties
 
 from app.graph.state import UnderwritingState
-from app.graph.workflow import build_underwriting_graph
+from app.graph.workflow import build_underwriting_graph, build_underwriting_graph_with_checkpointer
 from app.models.decision import DecisionResult
 from app.services.audit import audit_store, create_audit_record
 from app.document_ingestion.agent import DocumentIngestionAgent
@@ -366,6 +366,154 @@ def _build_valuation_response(
                 "explanation",
                 "",
             ),
+    }
+
+
+# =======================================================
+# MAIN UNDERWRITING WORKFLOW WITH HUMAN REVIEW
+# =======================================================
+
+class UnderwritingResumeRequest(BaseModel):
+    approved: bool
+    notes: str = ""
+
+
+@app.post("/api/v1/underwriting/evaluate")
+async def evaluate_underwriting(
+    request: UnderwritingRequest,
+):
+    """
+    Run the full underwriting workflow with human review support.
+    
+    The workflow runs through:
+    1. Document Ingestion
+    2. Credit Analysis
+    3. Property Valuation
+    4. Compliance Check
+    5. Decision Making
+    
+    If the workflow pauses for human review (SUSPEND decision),
+    the client can resume via /api/v1/underwriting/{thread_id}/resume
+    """
+    thread_id = str(uuid.uuid4())
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    initial_state = {
+        "application_id": request.application_id,
+        "borrower_id": f"BORR-{request.application_id}",
+        "raw_document_paths": request.raw_document_paths,
+        "borrower_profile": request.borrower_profile,
+        "document_analysis": request.document_analysis,
+        "credit_analysis": request.credit_analysis,
+        "property_analysis": request.property_analysis,
+        "compliance_analysis": request.compliance_analysis,
+        "errors": [],
+    }
+
+# Use pre-compiled graph with checkpointer for human review support
+    app_graph = build_underwriting_graph_with_checkpointer()
+
+    # Run the workflow
+    result = await app_graph.ainvoke(initial_state, config=config)
+
+    # Check if human review is required
+    state = app_graph.get_state(config)
+
+    # Check if suspended for human review
+    if state.next and "human_review" in state.next:
+        decision = result.get("decision", {})
+        return {
+            "status": "PENDING_HUMAN_REVIEW",
+            "thread_id": thread_id,
+            "message": (
+                "Underwriting decision suspended for human review. "
+                f"Preliminary decision: {decision.get('decision', 'UNKNOWN')}"
+            ),
+            "preliminary_decision": decision.get("decision"),
+            "risk_score": decision.get("risk_score"),
+            "confidence": decision.get("confidence"),
+            "flags": decision.get("flags", []),
+            "contradictions": result.get("contradictions", []),
+        }
+
+    # Decision completed without human review
+    decision = result.get("decision", {})
+    return {
+        "status": "COMPLETED",
+        "thread_id": thread_id,
+        "application_id": request.application_id,
+        "decision": decision.get("decision"),
+        "risk_score": decision.get("risk_score"),
+        "confidence": decision.get("confidence"),
+        "risk_level": decision.get("risk_level"),
+        "rationale": decision.get("rationale"),
+        "flags": decision.get("flags", []),
+        "contradictions": result.get("contradictions", []),
+        "underwriting_report": result.get("underwriting_report", ""),
+    }
+
+
+@app.post("/api/v1/underwriting/{thread_id}/resume")
+async def resume_underwriting(
+    thread_id: str,
+    req: UnderwritingResumeRequest,
+):
+    """
+    Resume an underwriting workflow that was paused for human review.
+    
+    The underwriter provides their approval/rejection decision
+    and the workflow continues to final decision.
+    """
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+# Use pre-compiled graph with checkpointer for human review support
+    app_graph = build_underwriting_graph_with_checkpointer()
+
+    state = app_graph.get_state(config)
+
+    if not state.next or "human_review" not in state.next:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Thread is not pending human "
+                "review or does not exist."
+            ),
+        )
+
+    # If rejected by human reviewer
+    if not req.approved:
+        return {
+            "status": "REJECTED_BY_UNDERWRITER",
+            "message": "Underwriting rejected by underwriter.",
+            "notes": req.notes,
+        }
+
+    # Resume the graph with human approval
+    # The human review node will incorporate the approval
+    result = await app_graph.ainvoke(None, config=config)
+
+    decision = result.get("decision", {})
+    return {
+        "status": "COMPLETED",
+        "thread_id": thread_id,
+        "application_id": result.get("application_id"),
+        "decision": decision.get("decision"),
+        "risk_score": decision.get("risk_score"),
+        "confidence": decision.get("confidence"),
+        "risk_level": decision.get("risk_level"),
+        "rationale": decision.get("rationale"),
+        "flags": decision.get("flags", []),
+        "contradictions": result.get("contradictions", []),
+        "underwriting_report": result.get("underwriting_report", ""),
     }
 
 

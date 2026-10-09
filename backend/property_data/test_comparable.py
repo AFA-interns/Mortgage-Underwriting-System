@@ -1,4 +1,4 @@
-@'
+
 import asyncio
 import sys
 
@@ -33,4 +33,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-'@ | Set-Content ".\backend\property_data\test_comparables.py"

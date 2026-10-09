@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from app.document_ingestion.agent import document_ingestion_node
@@ -72,3 +73,16 @@ def build_underwriting_graph() -> StateGraph:
     graph.add_edge("report", END)
 
     return graph
+
+
+def build_underwriting_graph_with_checkpointer() -> StateGraph:
+    """
+    Build the underwriting graph with a checkpointer for human review support.
+    """
+    graph = build_underwriting_graph()
+    
+    # Compile with MemorySaver checkpointer for human review support
+    checkpointer = MemorySaver()
+    compiled = graph.compile(checkpointer=checkpointer)
+    
+    return compiled

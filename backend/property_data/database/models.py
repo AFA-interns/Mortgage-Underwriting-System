@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, JSON
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
 
@@ -14,8 +14,8 @@ class PropertyListingDB(Base):
     source_url = Column(Text)
 
     state = Column(String(100))
-    city = Column(String(100), nullable=False)
-    locality = Column(String(200))
+    city = Column(String(100), nullable=False, index=True)
+    locality = Column(String(200), index=True)
     pincode = Column(String(20))
 
     property_type = Column(String(100))
@@ -37,3 +37,11 @@ class PropertyListingDB(Base):
 
     listing_date = Column(DateTime)
     collected_at = Column(DateTime, default=datetime.utcnow)
+
+    # Data quality tracking
+    data_quality_score = Column(Float, default=0.0)
+    quality_completeness = Column(Float, default=0.0)
+    quality_freshness = Column(Float, default=0.0)
+    source_count = Column(Integer, default=1)
+    imputed_fields = Column(JSON, default=list)
+    sources = Column(JSON, default=list)

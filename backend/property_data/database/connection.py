@@ -3,6 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.pool import NullPool
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 
@@ -15,14 +16,18 @@ if not DATABASE_URL:
         f"DATABASE_URL not found in {BASE_DIR / '.env'}"
     )
 
+# Use NullPool to avoid connection pool issues, and enable pool_pre_ping
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
+    pool_pre_ping=True,
+    poolclass=NullPool,
 )
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
     expire_on_commit=False,
+    autoflush=False,
 )
 
 

@@ -851,14 +851,28 @@ class DocumentExtractors:
         # 7. Property Address
         prop_address = None
 
-        address_match = re.search(
-            r"Property Address:\s*\n?\s*(.*?)(?=\n(?:Super Built-up Area|Carpet Area|Consideration Amount|Stamp Duty Paid):)",
-            text,
-            re.IGNORECASE | re.DOTALL,
-        )
+        # Try multiple address patterns (with/without colon, same line/next line)
+        address_patterns = [
+            # Pattern 1: "Property Address:" with colon, address on next line(s)
+            r"Property Address\s*:\s*\n\s*(.*?)(?=\n\s*(?:Super\s*Built|Carpet\s*Area|Consideration|Stamp\s*Duty))",
+            # Pattern 2: "Property Address" with colon, same line
+            r"Property Address\s*:\s*(.*?)(?:\n|$)",
+            # Pattern 3: "Property Address" without colon
+            r"Property Address\s+(.*?)(?:\n|$)",
+        ]
 
-        if address_match:
-            prop_address = address_match.group(1).strip()
+        for pattern in address_patterns:
+            address_match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if address_match:
+                prop_address = address_match.group(1).strip()
+                # Clean up trailing labels that might have been captured
+                prop_address = re.split(
+                    r'\n\s*(?:Super\s*Built|Carpet\s*Area|Consideration|Stamp\s*Duty)',
+                    prop_address,
+                    flags=re.I,
+                )[0].strip()
+                if prop_address:
+                    break
 
         if prop_address:
             provenance["property_address"] = FieldProvenance(
@@ -869,10 +883,10 @@ class DocumentExtractors:
             )
 
         # 5. Built-up / Carpet Area
-        sbu_match = re.search(r"(?:Super\s*Built-?up\s*Area|Built-?up\s*Area|SBUA)\s*[:\-]?\s*\n?\s*([\d,]+\.?\d*)\s*(?:Sq\.?\s*Ft\.?|Square\s*Feet|sqft)", text, re.I)
+        sbu_match = re.search(r"(?:Super\s*Built-?up\s*Area|Built-?up\s*Area|SBUA)\s*[:\-]?\s*([\d,]+\.?\d*)\s*(?:Sq\.?\s*Ft\.?|Square\s*Feet|sqft)", text, re.I)
         super_area = float(sbu_match.group(1).replace(",", "")) if sbu_match else None
 
-        carpet_match = re.search(r"(?:Carpet\s*Area)\s*[:\-]?\s*\n?\s*([\d,]+\.?\d*)\s*(?:Sq\.?\s*Ft\.?|Square\s*Feet|sqft)", text, re.I)
+        carpet_match = re.search(r"(?:Carpet\s*Area)\s*[:\-]?\s*([\d,]+\.?\d*)\s*(?:Sq\.?\s*Ft\.?|Square\s*Feet|sqft)", text, re.I)
         carpet_area = float(carpet_match.group(1).replace(",", "")) if carpet_match else None
 
         if super_area:
@@ -884,13 +898,13 @@ class DocumentExtractors:
             )
 
         # 6. Purchase Consideration Amount (Transaction Value in INR)
-        val_match = re.search(r"(?:Consideration\s*(?:Amount|Value)?|Total\s*Sale\s*Price|Purchase\s*Price|Sale\s*Consideration)\s*[:\-]?\s*\n?\s*(?:INR|Rs\.?|Γé╣)?\s*([\d,]+\.?\d*)", text, re.I)
+        val_match = re.search(r"(?:Consideration\s*(?:Amount|Value)?|Total\s*Sale\s*Price|Purchase\s*Price|Sale\s*Consideration)\s*[:\-]?\s*\n?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+\.?\d*)", text, re.I)
         purchase_val = float(val_match.group(1).replace(",", "")) if val_match else None
         if purchase_val:
             provenance["purchase_or_market_value"] = FieldProvenance(
                 source_document=doc.filename,
                 page_number=1,
-                raw_snippet=f"Consideration: Γé╣{purchase_val:,.2f}",
+                raw_snippet=f"Consideration: ₹{purchase_val:,.2f}",
                 confidence=0.94
             )
 
