@@ -148,7 +148,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Geocoding | geopy (Nominatim) |
 | Data | SQLAlchemy + psycopg (PostgreSQL: applications, local comparables), BeautifulSoup4 + httpx (Square Yards scraper), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (366 tests) |
+| Testing | pytest (382 tests) |
 | Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
@@ -173,6 +173,7 @@ mortgage-underwriting-system/
 │   │   │   ├── agent.py, classifier.py, extractors.py, validators.py
 │   │   │   ├── reconciliation.py, confidence.py, preprocessor.py, config.py
 │   │   │   ├── image_to_pdf.py (JPG/PNG → PDF), field_overrides.py (HITL review)
+│   │   │   ├── metrics.py (classification/OCR/calibration/reconciliation metrics - pure functions)
 │   │   ├── compliance/                 # KYC, identity, PMLA, RBI, NHB, RERA rules + engine
 │   │   ├── graph/
 │   │   │   ├── nodes/                  # LangGraph nodes
@@ -194,7 +195,7 @@ mortgage-underwriting-system/
 │   ├── scripts/credit_metrics_report.py # CLI: correctness/calibration/fairness report over exported applications
 │   ├── data/labeled_cases.json         # 32 synthetic labeled cases for decision evaluation
 │   ├── config/                         # risk_, credit_, compliance_, document_ingestion_config.yaml
-│   ├── tests/                          # 366 tests (unit + e2e)
+│   ├── tests/                          # 382 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -241,7 +242,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 366 tests pass
+pytest tests/ -v           # 382 tests pass
 python smoke_test_pipeline.py  # Full pipeline on the 4 mock-document scenarios (prints each result)
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -332,7 +333,8 @@ In the UI, **New application** accepts real PDFs/JPGs/PNGs (or one of five demo 
 | Multi-source property scraper (JSON-LD extraction, cross-source matching/merging) | 54 | 100% |
 | Decision evaluation (classification/ranking/calibration metrics, CLI, labeled dataset, endpoints) | 35 | 100% |
 | Credit evaluation metrics (correctness, calibration, fairness, CLI/report) | 52 | 100% |
-| **Total** | **366** | **100%** |
+| Document ingestion evaluation metrics (classification, OCR, calibration, reconciliation) | 16 | 100% |
+| **Total** | **382** | **100%** |
 
 ---
 
