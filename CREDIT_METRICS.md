@@ -77,7 +77,22 @@ Calibration caveat: in this system `confidence` means *evidence quality* (how co
 - **Monotonicity** (black box): `risk_score` never falls as `cibil_score` rises 300-900; never rises as `existing_debt` (FOIR) rises; falls strictly with each added severe red flag (settled, written-off, DPD>90).
 - **Branch coverage** of `generate_preliminary_decision`: one test per ordered branch. The function has 8 return points (3 REJECT, 4 CONDITIONAL, 1 default APPROVE), not 7.
 
-Measure it with `pytest tests/test_credit_*.py --cov=app.credit --cov-branch --cov-report=term-missing` (needs `pytest-cov`, which is not in `pyproject.toml`; `coverage run --branch -m pytest ...` works with the already-installed `coverage`).
+Measure it with `pytest tests/test_credit_*.py --cov=app.credit --cov-branch --cov-report=term-missing` (`pytest-cov` is in the `dev` extra of `pyproject.toml`; `coverage run --branch --source=app.credit -m pytest tests/test_credit_*.py` followed by `coverage report -m` also works). Last measured run: 99 tests pass; `app/credit/scoring.py` (holds `compute_credit_risk_score` and `generate_preliminary_decision`) is at 100% line and 100% branch coverage.
+
+### Before changing `credit_config.yaml`
+
+The determinism, monotonicity and decision-branch tests in `tests/test_credit_correctness_metrics.py` (and the rest of `tests/test_credit_*.py`) **must pass before any change to `backend/config/credit_config.yaml`**, and again after it. If a monotonicity or branch test fails after a config edit, the edit changed the rules' behaviour in a way that needs a deliberate decision, not a test tweak.
+
+### How to run the credit tests in CI
+
+The repository has no CI configuration yet (no `.github/workflows`, Makefile or tox), so none was invented. When CI is added, run this from `backend/` after `pip install -e ".[dev]"`:
+
+```bash
+cd backend
+pytest tests/test_credit_*.py tests/test_credit_metrics_module.py -q
+```
+
+The tests are pure Python: no database, network or LLM is needed.
 
 ## Correction to the source document: what one severe red flag costs
 
@@ -87,9 +102,9 @@ The source document says one severe red flag lowers the score by 30 points. In t
 
 Phase 3 and a trustworthy "reviewed" rate need data the schema does not hold. Proposed, for a later migration:
 
-1. **Outcome label per `application_id`**: `outcome_bad` (nullable smallint, 1/0), `outcome_observed_at`, and `observation_window_months` (e.g. 12 - "bad" = 90+ DPD within the window). Only applications that were actually disbursed can have one, which also means the labelled set is biased towards approvals; document that when reporting AUC/KS.
-2. **Baseline score snapshot for PSI**: a small table or JSON file of `risk_score` values (or the bin edges and shares) for the reference period, with the date range and bureau-source mix it covers, so PSI does not depend on someone remembering to run `--save-baseline`.
-3. **Reviewed flag**: `documents.reviewed_at` (or `applications.reviewed`) so the data-quality denominator means "a human actually reviewed this" rather than "has parsed documents".
+1. **`outcome_bad` flag + observation window per `application_id`**: `outcome_bad` (nullable smallint, 1/0), `outcome_observed_at`, and `observation_window_months` (e.g. 12 - "bad" = 90+ DPD within the window). Only applications that were actually disbursed can have one, which also means the labelled set is biased towards approvals; document that when reporting AUC/KS.
+2. **Stored baseline score snapshot for PSI**: a small table or JSON file of `risk_score` values (or the bin edges and shares) for the reference period, with the date range and bureau-source mix it covers, so PSI does not depend on someone remembering to run `--save-baseline`.
+3. **Real `human_reviewed` flag**: `applications.human_reviewed` (boolean) plus `reviewed_at` / reviewer id (or `documents.reviewed_at`), set when a person actually opens and confirms or corrects the documents, so the data-quality denominator means "a human actually reviewed this" rather than "has parsed documents".
 4. **Audit attributes** (gender and any others you want to monitor) stored in a separate audit table keyed by `application_id`, outside the decision path, instead of being dug out of `documents.parsed_fields`.
 
 ## Not implemented
