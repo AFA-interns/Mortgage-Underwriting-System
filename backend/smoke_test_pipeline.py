@@ -39,6 +39,8 @@ def main() -> int:
     failures = 0
 
     for sid, scenario in DEMO_SCENARIOS.items():
+        if sid not in EXPECTED:
+            continue  # demo scenarios with their own generator (not in docs), e.g. HITL demos
         paths = docs[scenario["key"]]
         state = {
             "application_id": f"SMOKE-{sid.upper()}",

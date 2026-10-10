@@ -8,6 +8,7 @@ from app.services.llm import explain
 from app.tools.geocoder import geocode_address
 from app.tools.external_api import fetch_api_valuation
 from app.tools.local_comparables import fetch_local_valuation
+from app.tools.comparables_db import get_comparables_sync
 
 
 def _extract_property_data(state: UnderwritingState) -> dict:
@@ -111,6 +112,31 @@ def property_valuation_node(
     )
 
     # ---------------------------------------------------------
+    # SCRAPED COMPARABLES DATABASE (SquareYards/Housing/MagicBricks/...)
+    # ---------------------------------------------------------
+    # get_comparables() is async (its own DB session); get_comparables_sync()
+    # bridges it so this node stays a plain sync graph node like the rest of
+    # the shared underwriting pipeline.
+
+    db_comps = get_comparables_sync(
+        locality=locality,
+        city=city,
+        property_type=property_type,
+        bhk=bhk,
+        area_sqft=area_sqft,
+    )
+
+    comp_value = 0.0
+    db_price_per_sqft = 0.0
+    if db_comps:
+        prices_per_sqft = [
+            c.get("price_per_sqft_inr") for c in db_comps if c.get("price_per_sqft_inr")
+        ]
+        if prices_per_sqft and area_sqft:
+            db_price_per_sqft = sum(prices_per_sqft) / len(prices_per_sqft)
+            comp_value = db_price_per_sqft * area_sqft
+
+    # ---------------------------------------------------------
     # AVNESTER LIVE LISTINGS (comparables + estimate)
     # ---------------------------------------------------------
 
@@ -127,6 +153,7 @@ def property_valuation_node(
     scope = api_val.get("scope")
     risk_flags: list[str] = []
     value_source = "avnester"
+    difference = 0
 
     if not api_val.get("supported", True) and api_val.get("scope_message"):
         # AVnester tells us outright when a city/state is out of its
@@ -148,15 +175,43 @@ def property_valuation_node(
             )
         if len(comparables) < 2:
             risk_flags.append("Insufficient comparable properties available.")
+        if comp_value > 0:
+            difference = abs(comp_value - api_est) / api_est
+            if difference > 0.25:
+                risk_flags.append(
+                    "Scraped database comparables disagree with AVnester by more "
+                    "than 25%; valuation confidence lowered accordingly."
+                )
+                confidence_score = max(0.0, confidence_score - 0.15)
         explanation = (
             f"Property valuation estimated at Rs {estimated_value:,.0f} "
             f"(median Rs {price_per_sqft:,.0f}/sqft x {area_sqft:,.0f} sqft) "
             f"from {len(comparables)} live AVnester listings "
             f"({scope}-level)."
         )
+    elif comp_value > 0:
+        # AVnester has nothing usable - the scraped comparables database
+        # (SquareYards/Housing/MagicBricks/...) becomes the estimate.
+        value_source = "scraped_db"
+        comparables = db_comps
+        estimated_value = comp_value
+        method = ["comparable_sales", "scraped_db"]
+        market_range_low = comp_value * 0.90
+        market_range_high = comp_value * 1.10
+        price_per_sqft = db_price_per_sqft
+        confidence_score = 0.70
+        risk_flags.append(
+            "AVnester returned no usable listings; valuation uses the "
+            "scraped property comparables database instead."
+        )
+        explanation = (
+            f"Property valuation estimated at Rs {estimated_value:,.0f} "
+            f"(average Rs {price_per_sqft:,.0f}/sqft x {area_sqft:,.0f} sqft) "
+            f"from {len(comparables)} scraped comparable listings."
+        )
     else:
-        # AVnester has nothing usable - fall back to the locally stored
-        # comparables database (scraped listings; see app.tools.local_comparables).
+        # Both the scraped database and AVnester came up empty - fall back
+        # to the simpler locality/city median lookup before giving up.
         local_val = fetch_local_valuation(
             locality=locality, city=city, bhk=bhk, area_sqft=area_sqft,
         )
@@ -172,8 +227,8 @@ def property_valuation_node(
             price_per_sqft = local_val.get("price_per_sqft_inr", 0)
             confidence_score = 0.65 if local_val.get("scope") == "locality" else 0.55
             risk_flags.append(
-                "AVnester returned no usable listings; valuation uses the "
-                "local comparables database instead."
+                "AVnester and the scraped comparables database both had no "
+                "usable listings; valuation uses the local median fallback instead."
             )
             explanation = (
                 f"Property valuation estimated at Rs {estimated_value:,.0f} "
@@ -182,22 +237,20 @@ def property_valuation_node(
                 f"({local_val.get('scope')}-level)."
             )
         else:
+            value_source = "none"
             estimated_value = 0
-            method = ["avnester", "local_database"]
+            method = ["avnester", "scraped_db", "local_database"]
             market_range_low = market_range_high = price_per_sqft = 0
             confidence_score = 0.0
             risk_flags.append(
-                "No usable AVnester listings, and no local comparables, for "
-                "this property type and location."
+                "No usable AVnester, scraped database, or local comparables "
+                "for this property type and location."
             )
             explanation = (
-                "Property valuation could not be determined: neither "
-                "AVnester nor the local comparables database had usable "
-                "listings for this location."
+                "Property valuation could not be determined: AVnester, the "
+                "scraped comparables database, and the local comparables "
+                "database all had no usable listings for this location."
             )
-
-    comp_value = api_est
-    difference = 0
 
     # ---------------------------------------------------------
     # EXPLANATION (local LLM, template fallback)
@@ -293,6 +346,7 @@ def property_valuation_node(
             "sources": [
                 "Nominatim Geocoder",
                 "AVnester",
+                "Scraped comparables database",
                 "Local comparables database",
             ],
         },

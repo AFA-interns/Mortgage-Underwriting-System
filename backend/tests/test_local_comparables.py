@@ -142,7 +142,7 @@ def test_property_valuation_node_falls_back_to_local_db_when_avnester_is_empty()
     analysis = result["property_analysis"]
     assert analysis["estimated_value"] > 0
     assert any(e["source"] == "local_db" for e in analysis["evidence"])
-    assert "local comparables database" in " ".join(analysis["flags"]).lower()
+    assert "local median fallback" in " ".join(analysis["flags"]).lower()
 
 
 def test_property_valuation_node_zero_when_both_sources_empty():

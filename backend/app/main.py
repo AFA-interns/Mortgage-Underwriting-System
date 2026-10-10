@@ -1,31 +1,50 @@
 """FastAPI application — exposes underwriting API endpoints."""
+
 from __future__ import annotations
 
 import os
 import shutil
 import tempfile
-from typing import Any, List, Optional, Dict
-
-from app.services.avnester import search_properties
+import uuid
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.services.avnester import search_properties
+
 from app.graph.state import UnderwritingState
-from app.graph.workflow import build_underwriting_graph
+from app.graph.workflow import build_underwriting_graph, build_underwriting_graph_with_checkpointer
 from app.models.decision import DecisionResult
 from app.services.audit import audit_store, create_audit_record
 from app.document_ingestion.agent import DocumentIngestionAgent
 from app.models.document_ingestion_state import DocumentIngestionOutput
 
+from app.models.property_valuation import (
+    PropertyIntake,
+    ValuationResponse,
+    ValuationRange,
+)
+
+from app.graph.property_workflow import valuation_graph
+from app.tools.external_api import fetch_api_valuation
+
+
 app = FastAPI(
     title="Mortgage Underwriting API",
-    description="Agentic AI Mortgage Underwriting System — Document Ingestion + Decision Agent",
+    description=(
+        "Agentic AI Mortgage Underwriting System — "
+        "Document Ingestion + Decision Agent"
+    ),
     version="0.1.0",
 )
 
-# Enable CORS for frontend integration
+
+# =======================================================
+# CORS
+# =======================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,25 +53,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory session cache for processed document ingestion packages
-PROCESSED_APPLICATIONS: Dict[str, DocumentIngestionOutput] = {}
 
+# =======================================================
+# APPLICATION CACHE
+# =======================================================
+
+PROCESSED_APPLICATIONS: Dict[
+    str,
+    DocumentIngestionOutput
+] = {}
+
+
+# =======================================================
+# UNDERWRITING REQUEST
+# =======================================================
 
 class UnderwritingRequest(BaseModel):
+
     application_id: str
+
     raw_document_paths: list[str] = []
+
     borrower_profile: dict[str, Any] = {}
+
     document_analysis: dict[str, Any] = {}
+
     credit_analysis: dict[str, Any] = {}
+
     property_analysis: dict[str, Any] = {}
+
     compliance_analysis: dict[str, Any] = {}
 
+
+# =======================================================
+# HEALTH CHECK
+# =======================================================
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     from app.services.applications import store as _store
 
     return {"status": "ok", "storage": _store.kind, "storage_detail": _store.description}
+
 
 
 # -------------------------------------------------------
@@ -265,52 +307,6 @@ def resolve_review_item(item_id: str) -> dict[str, Any]:
     return item
 
 
-@app.post("/underwriting/{application_id}/run")
-async def run_underwriting(application_id: str, request: UnderwritingRequest) -> dict[str, Any]:
-    """Run the full Decision Agent pipeline."""
-    state: UnderwritingState = {
-        "application_id": application_id,
-        "raw_document_paths": request.raw_document_paths,
-        "borrower_profile": request.borrower_profile,
-        "document_analysis": request.document_analysis,
-        "credit_analysis": request.credit_analysis,
-        "property_analysis": request.property_analysis,
-        "compliance_analysis": request.compliance_analysis,
-        "errors": [],
-    }
-
-    try:
-        graph = build_underwriting_graph()
-        compiled = graph.compile()
-        result = compiled.invoke(state)
-
-        # Audit — decision is a dict from GraphState; wrap in DecisionResult if valid
-        decision_dict = result.get("decision") or {}
-        final_decision = None
-        try:
-            final_decision = DecisionResult.model_validate(decision_dict)
-        except Exception:
-            final_decision = None
-        create_audit_record(
-            application_id=application_id,
-            final_decision=final_decision,
-            errors=[e.get("message", "") for e in result.get("errors", [])],
-        )
-
-        return {
-            "application_id": application_id,
-            "decision": result.get("decision"),
-            "report": result.get("underwriting_report"),
-            "human_review_required": result.get("human_review_required", True),
-        }
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Decision pipeline failed: {e}",
-        ) from e
-
-
 @app.get("/underwriting/{application_id}/decision")
 async def get_decision(application_id: str) -> dict[str, Any]:
     """Retrieve the decision for an application."""
@@ -521,9 +517,17 @@ async def resume_valuation(thread_id: str, req: ResumeRequest):
     return _build_valuation_response(result)
 
 
+_SOURCE_LABELS = {
+    "avnester": "AVnester",
+    "scraped_db": "Scraped comparables database",
+    "local_db": "Local comparables database",
+    "none": "No source",
+}
+
+
 def _build_valuation_response(state_dict) -> dict:
     value_source = state_dict.get("value_source", "avnester")
-    source_label = "Local comparables database" if value_source == "local_db" else "AVnester"
+    source_label = _SOURCE_LABELS.get(value_source, "AVnester")
     return {
         "estimated_market_value_inr": state_dict.get("final_value", {}).get("estimated_market_value_inr", 0),
         "valuation_range_inr": state_dict.get("final_value", {}).get("valuation_range_inr", {"low": 0, "high": 0}),

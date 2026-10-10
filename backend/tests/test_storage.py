@@ -12,7 +12,7 @@ def test_uploaded_documents_are_stored_and_downloadable(mock_docs):
     run = client.post("/api/v1/underwriting/run", data={"demo_scenario": "missing_docs"})
     assert run.status_code == 200
     view = run.json()
-    assert len(view["document_files"]) == 2
+    assert len(view["document_files"]) == 3
     assert all(not d["type"].startswith("DocumentType.") for d in view["document_files"])
 
     doc = view["document_files"][0]

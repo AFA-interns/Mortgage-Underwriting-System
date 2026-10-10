@@ -43,8 +43,8 @@ def test_evaluate_endpoint_reports_local_db_as_value_source_on_avnester_fallback
 
 def run_test():
     payload = {
-        "address": "100 Feet Road",
-        "locality": "Indiranagar",
+        "address": "Whitefield Main Road",
+        "locality": "Whitefield",
         "city": "Bangalore",
         "property_type": "Apartment",
         "bhk": 2,

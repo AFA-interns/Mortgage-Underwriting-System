@@ -19,7 +19,8 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, create_engine, select
+from sqlalchemy import DateTime, Float, Integer, String, Text, create_engine, select, text
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,35 @@ class PropertyListingRow(Base):
     listing_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
+    # Data quality tracking - shared with property_data's async scraper
+    # stack (property_data/database/models.py targets the same table).
+    data_quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_completeness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_freshness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    imputed_fields: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+
+# Columns added after the table's first release - ALTER TABLE ... ADD COLUMN
+# IF NOT EXISTS so an existing table (created by an earlier version of this
+# module, or by property_data's async stack targeting the same table name)
+# stays compatible without a migration tool.
+_ADDED_COLUMNS = [
+    ("property_listings", "data_quality_score", "FLOAT"),
+    ("property_listings", "quality_completeness", "FLOAT"),
+    ("property_listings", "quality_freshness", "FLOAT"),
+    ("property_listings", "source_count", "INTEGER"),
+    ("property_listings", "imputed_fields", "JSON"),
+    ("property_listings", "sources", "JSON"),
+]
+
+
+def _ensure_columns(engine) -> None:
+    with engine.begin() as conn:
+        for table, column, col_type in _ADDED_COLUMNS:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type}"))
+
 
 _session_factory: sessionmaker | None = None
 _init_attempted = False
@@ -78,6 +108,7 @@ def _get_session_factory() -> sessionmaker | None:
         ensure_database(url)
         engine = create_engine(url, pool_pre_ping=True)
         Base.metadata.create_all(engine)
+        _ensure_columns(engine)
         _session_factory = sessionmaker(engine, expire_on_commit=False)
     except Exception as exc:
         logger.warning("Local property-comparables database unavailable: %s", exc)
@@ -138,6 +169,11 @@ def save_listings(listings: list[dict[str, Any]]) -> dict[str, int]:
                 parking=item.get("parking"),
                 listing_date=item.get("listing_date"),
                 collected_at=datetime.now(UTC),
+                # Default above comparables_db.get_comparables()'s quality
+                # threshold (40.0) so rows from this simpler sync ingestion
+                # path aren't silently invisible to the richer async reader.
+                data_quality_score=item.get("data_quality_score", 50.0),
+                source_count=item.get("source_count", 1),
             ))
             inserted += 1
     return {"inserted": inserted, "duplicates": duplicates}
