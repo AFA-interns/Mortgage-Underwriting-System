@@ -283,7 +283,7 @@ export function Detail({ app, setView, onReviewDocuments }: { app: ApplicationVi
         <div>
           <div className="id-line">
             <span data-testid="detail-id">{app.id}</span><StatusPill tone={statusTone(app.status)}>{app.status}</StatusPill>
-            {app.revised_from && <span className="revision-badge" data-testid="revision-badge"><GitBranch size={12} /> Revision of {app.revised_from}</span>}
+            {!!app.rerun_count && <span className="revision-badge" data-testid="revision-badge"><GitBranch size={12} /> Corrected · rerun ×{app.rerun_count}</span>}
           </div>
           <h2>{app.borrower}</h2>
           <p className="muted">{app.property_type} · {app.property_label}</p>

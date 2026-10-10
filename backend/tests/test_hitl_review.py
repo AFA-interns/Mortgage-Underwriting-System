@@ -120,9 +120,43 @@ def test_rerun_without_overrides_reproduces_the_decision():
     rerun = _rerun(view["id"])
     assert rerun.status_code == 200
     body = rerun.json()
-    assert body["id"] != view["id"]
-    assert body["revised_from"] == view["id"]
+    assert body["id"] == view["id"]
+    assert body["rerun_count"] == 1
     assert body["decision"]["decision"] == view["decision"]["decision"]
+
+
+def test_rerun_keeps_the_same_id_across_multiple_reruns():
+    """A correction must never spawn a second application for one case —
+    the application id stays constant no matter how many times it's
+    rerun, with rerun_count tracking how many corrections were applied."""
+    view = _run_clean_demo()
+    assert view.get("rerun_count", 0) == 0
+
+    first = _rerun(view["id"]).json()
+    assert first["id"] == view["id"]
+    assert first["rerun_count"] == 1
+
+    second = _rerun(view["id"]).json()
+    assert second["id"] == view["id"]
+    assert second["rerun_count"] == 2
+
+
+def test_rerun_clears_the_previous_runs_documents():
+    """Reusing the same application id must not accumulate every prior
+    run's documents underneath it — only the latest run's documents
+    should be stored and listed."""
+    from app.services.applications import store
+
+    view = _run_clean_demo()
+    old_doc_ids = {d["id"] for d in view["document_files"]}
+
+    rerun = _rerun(view["id"]).json()
+    new_doc_ids = {d["id"] for d in rerun["document_files"]}
+
+    assert len(new_doc_ids) == len(old_doc_ids)
+    assert new_doc_ids.isdisjoint(old_doc_ids)
+    for old_id in old_doc_ids:
+        assert store.get_document(view["id"], old_id) is None
 
 
 def test_an_invalid_override_flips_a_clean_approval_to_suspend():

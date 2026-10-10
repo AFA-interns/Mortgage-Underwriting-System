@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
-    DateTime, Float, ForeignKey, Integer, LargeBinary, Sequence, String, Text, create_engine, select, text,
+    DateTime, Float, ForeignKey, Integer, LargeBinary, Sequence, String, Text, create_engine, delete, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import URL, make_url
@@ -255,3 +255,14 @@ class PostgresApplicationStore:
             if row is None or row.application_id != application_id:
                 return None
             return row.field_overrides
+
+    def delete_application_documents(self, application_id: str) -> None:
+        """Clears a prior run's stored documents (and their parsed-fields/
+        overrides, same row) and review items for this application_id, so a
+        /rerun that reuses the same id doesn't accumulate the previous run's
+        rows alongside the new ones. Review-item ids are deterministic
+        (RV-{app_id}-{i+1}), so without this a corrected run with fewer
+        flags than before would leave stale extra rows behind."""
+        with self._session.begin() as s:
+            s.execute(delete(DocumentRow).where(DocumentRow.application_id == application_id))
+            s.execute(delete(ReviewItemRow).where(ReviewItemRow.application_id == application_id))

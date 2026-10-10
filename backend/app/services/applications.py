@@ -157,6 +157,15 @@ class ApplicationStore:
     def get_override(self, application_id: str, doc_id: str) -> dict[str, Any] | None:
         return self._overrides.get((application_id, doc_id))
 
+    def delete_application_documents(self, application_id: str) -> None:
+        """Clears a prior run's stored documents/parsed-fields/overrides for
+        this application_id, so a /rerun that reuses the same id doesn't
+        accumulate the previous run's documents alongside the new ones."""
+        with self._lock:
+            for store_dict in (self._docs, self._parsed, self._overrides):
+                for key in [k for k in store_dict if k[0] == application_id]:
+                    del store_dict[key]
+
     def list(self) -> list[dict[str, Any]]:
         return sorted(self._apps.values(), key=lambda a: a["created_at"], reverse=True)
 
@@ -382,17 +391,24 @@ def run_application(
     source: str = "upload",
     bureau_consent: bool = False,
     field_overrides: dict[str, dict[str, Any]] | None = None,
-    revised_from: str | None = None,
+    application_id: str | None = None,
+    rerun_count: int = 0,
 ) -> dict[str, Any]:
     """Runs the full pipeline (ingestion -> credit/property/compliance -> decision).
 
     `field_overrides` (keyed by entry in `file_paths`) carries human-review
     corrections into this run's document ingestion — see
-    app.document_ingestion.field_overrides. `revised_from` marks this as a
-    /rerun of an earlier application (kept for the audit trail; the earlier
-    application is never modified).
+    app.document_ingestion.field_overrides. `application_id` re-runs this
+    pipeline in place for an existing application (a /rerun after a document
+    correction): the application keeps exactly one id for its whole life,
+    so the report, decision and review queue all stay under that one id
+    instead of a new application appearing per correction. The prior run's
+    stored documents are cleared first so they don't pile up under the
+    same id; `rerun_count` records how many times that's happened.
     """
-    app_id = store.next_id()
+    app_id = application_id or store.next_id()
+    if application_id:
+        store.delete_application_documents(app_id)
     started = time.time()
 
     # Resolved once, here, rather than left to credit_node's own fallback,
@@ -448,7 +464,7 @@ def run_application(
         "recorded_at": datetime.now(UTC).isoformat(),
     }
     view["credit_bureau_used"] = resolved_bureau
-    view["revised_from"] = revised_from
+    view["rerun_count"] = rerun_count
     store.save(view)
     store.save_documents(app_id, [{k: v for k, v in d.items() if k != "parsed"} for d in stored])
     for d in stored:
@@ -495,8 +511,8 @@ def _profile_from_view(view: dict[str, Any]) -> dict[str, Any]:
 def rerun_application(application_id: str) -> dict[str, Any]:
     """Re-runs the full pipeline for an existing application, re-using its
     stored documents and borrower profile, with any saved human-review field
-    overrides applied. Produces a NEW application (linked via
-    `revised_from`); the original is left untouched as an audit record.
+    overrides applied. Updates that SAME application in place (same id) -
+    a document correction must not spawn a second application for one case.
 
     Raises KeyError if the application doesn't exist, ValueError if it has
     no stored documents to re-run.
@@ -539,7 +555,8 @@ def rerun_application(application_id: str) -> dict[str, Any]:
             source=f"rerun:{application_id}",
             bureau_consent=(original.get("bureau_consent") or {}).get("given", False),
             field_overrides=overrides_by_path,
-            revised_from=application_id,
+            application_id=application_id,
+            rerun_count=(original.get("rerun_count") or 0) + 1,
         )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

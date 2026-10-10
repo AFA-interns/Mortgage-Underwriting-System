@@ -86,7 +86,7 @@ export default function UnderwritingApp() {
             app={current}
             initialDocId={reviewDocId}
             setView={setView}
-            onRerun={(a) => { setApps((prev) => [a, ...prev]); setSelectedId(a.id); setView('detail') }}
+            onRerun={(a) => { setApps((prev) => [a, ...prev.filter((x) => x.id !== a.id)]); setSelectedId(a.id); setView('detail') }}
           />
         )}
       </main>

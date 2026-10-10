@@ -284,8 +284,8 @@ def put_document_parsed_fields(application_id: str, doc_id: str, body: DocumentF
 @app.post("/api/v1/applications/{application_id}/rerun")
 def post_rerun_application(application_id: str) -> dict[str, Any]:
     """Re-runs the full pipeline for this application with any saved field
-    overrides applied, producing a new application linked via
-    `revised_from`. The original application is left untouched."""
+    overrides applied, updating this SAME application in place (same id,
+    `rerun_count` incremented) - a document correction stays one case."""
     try:
         return rerun_application(application_id)
     except KeyError as exc:

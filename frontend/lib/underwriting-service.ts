@@ -67,7 +67,7 @@ export type ApplicationView = {
   report: Record<string, any>
   errors: string[]
   review_items: ReviewItem[]
-  revised_from?: string | null
+  rerun_count?: number
 }
 
 export type DemoScenario = {
