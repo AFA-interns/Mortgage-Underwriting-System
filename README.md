@@ -193,6 +193,7 @@ mortgage-underwriting-system/
 │   │   ├── cleaners/property_cleaner.py, pipeline.py, valuation.py
 │   ├── scripts/ingest_squareyards.py   # One-off CLI: scrape -> clean -> property_db.save_listings
 │   ├── scripts/credit_metrics_report.py # CLI: correctness/calibration/fairness report over exported applications
+│   ├── scripts/document_ingestion_metrics_report.py # CLI: runs the real agent over bundled demo scenarios, reports metrics
 │   ├── data/labeled_cases.json         # 32 synthetic labeled cases for decision evaluation
 │   ├── config/                         # risk_, credit_, compliance_, document_ingestion_config.yaml
 │   ├── tests/                          # 382 tests (unit + e2e)

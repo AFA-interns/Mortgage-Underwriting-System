@@ -117,7 +117,27 @@ Computed from live audit logs, no ground-truth labels required:
 
 All of the above are implemented as pure, tested functions in `backend/app/document_ingestion/metrics.py` (`compute_classification_metrics`, `compute_cost_weighted_error`, `compute_cer`/`compute_wer`, `compute_exact_match`/`compute_token_f1`, `compute_numeric_accuracy`, `compute_brier_score`/`compute_ece`, `compute_reconciliation_metrics`, `compute_operational_metrics`) — see `backend/tests/test_document_ingestion_metrics.py` for hand-computed correctness checks on each one.
 
-**No comprehensive labeled benchmark has been run against the real agent yet.** These functions take whatever `(y_true, y_pred)`, `(confidence, correctness)`, or audit-record data you give them — running a real benchmark means generating a labeled dataset of document bundles, running them through `backend/app/document_ingestion/agent.py`, and feeding the actual outputs into these functions. That's a natural next step, not something this document reports on.
+### 7.1 Results — bundled demo scenarios (real, small sample)
+
+Reproduce with `cd backend && venv\Scripts\python.exe scripts/document_ingestion_metrics_report.py`. This runs the real agent (`DocumentIngestionAgent.process_document_bundle`) against this project's own 6 bundled demo scenarios — clean prime, name discrepancy, salary/bank discrepancy, missing documents, correctable PAN error, and the image-upload (OCR) demo — **35 documents total**, labeled against this project's own known, hand-written ground truth (not an external or crowd-labeled dataset). This is deliberately small — a real measurement from this project's own fixtures, not a claim of broad real-world coverage. A larger benchmark would need a bigger, independently labeled document set.
+
+| Metric | Result |
+| :--- | :---: |
+| Document Classification Accuracy / Balanced Accuracy | 100.0% / 100.0% (35/35 documents, all 6 classes) |
+| Asymmetric Cost-Weighted Error | 0.0000 |
+| Contradiction Detection Recall / Precision | 100.0% / 100.0% (2/2 planted contradictions caught, no false alarms) |
+| Name Resolution Accuracy | 100.0% |
+| Salary ↔ Bank Reconciliation Accuracy | 100.0% (4 bundles with a bank statement to reconcile against) |
+| Brier Calibration Score | 0.0210 |
+| Expected Calibration Error (ECE, 5 bins) | 0.1153 |
+| Straight-Through Processing (STP) Rate | 33.3% (2 of 6 bundles needed no review) |
+| HITL Escalation Rate | 66.7% (4 of 6 — by design, most of these demo bundles exist to exercise a safety gate) |
+| HITL Routing Decision Accuracy | 100.0% (6/6 bundles routed correctly vs. their known expected outcome) |
+| Field-level checks (clean-prime bundle, exact known values) | PAN exact match 1.0, borrower name token-F1 1.0, gross salary / bank AMB numeric match 1.0 |
+
+One finding worth calling out: the `correctable_pan_error` bundle's PAN *card* is correctly classified (document type), but its mandatory-document checklist still flags PAN as missing — because the extracted PAN number fails format validation, and the checklist only counts a document type as "present" when the value it carries is actually usable as KYC proof. That's the agent's safety behavior working as intended, not a classification error.
+
+**Scope note:** this is a real but small benchmark (6 bundles the project ships for its own demos), not a large independently-labeled dataset — unlike the earlier draft of this document, nothing above is simulated or hand-typed per category.
 
 ---
 

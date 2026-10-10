@@ -71,3 +71,4 @@ backend/metrics_out/
 applications*.jsonl
 applications*.json
 baseline*.json
+document_ingestion_benchmark_report*.json
