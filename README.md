@@ -148,7 +148,7 @@ A fully autonomous, deterministic mortgage underwriting pipeline built with Lang
 | Geocoding | geopy (Nominatim) |
 | Data | SQLAlchemy + psycopg (PostgreSQL: applications, local comparables), BeautifulSoup4 + httpx (Square Yards scraper), rapidfuzz (identity matching) |
 | Frontend | Next.js + Tailwind (`frontend/`, pnpm) |
-| Testing | pytest (223 tests) |
+| Testing | pytest (258 tests) |
 | Explanations | Optional **local LLM (Ollama)**, phrasing only; every decision is rule-based. No API keys. |
 
 ---
@@ -167,6 +167,8 @@ mortgage-underwriting-system/
 │   │   ├── decision/                   # Decision agent sub-modules
 │   │   │   ├── input_validator.py, contradiction_detector.py, agent_comparator.py
 │   │   │   ├── risk_engine.py, confidence.py, finalizer.py, report_writer.py
+│   │   ├── evaluation/                 # Offline metrics for the decision pipeline (no LLM)
+│   │   │   ├── schemas.py, loader.py, metrics.py, evaluator.py, runner.py, cli.py, synth.py
 │   │   ├── document_ingestion/         # 7-step ingestion pipeline
 │   │   │   ├── agent.py, classifier.py, extractors.py, validators.py
 │   │   │   ├── reconciliation.py, confidence.py, preprocessor.py, config.py
@@ -189,8 +191,9 @@ mortgage-underwriting-system/
 │   │   ├── scrapers/ (base_scraper.py, squareyards_scraper.py, demo_scraper.py)
 │   │   ├── cleaners/property_cleaner.py, pipeline.py, valuation.py
 │   ├── scripts/ingest_squareyards.py   # One-off CLI: scrape -> clean -> property_db.save_listings
+│   ├── data/labeled_cases.json         # 32 synthetic labeled cases for decision evaluation
 │   ├── config/                         # risk_, credit_, compliance_, document_ingestion_config.yaml
-│   ├── tests/                          # 223 tests (unit + e2e)
+│   ├── tests/                          # 258 tests (unit + e2e)
 │   │   ├── test_*.py, conftest.py, mock_data/generate_docs.py
 │   ├── pyproject.toml
 │   └── README.md
@@ -237,7 +240,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-pytest tests/ -v           # 223 tests pass
+pytest tests/ -v           # 258 tests pass
 python smoke_test_pipeline.py  # Full pipeline on the 4 mock-document scenarios (prints each result)
 uvicorn app.main:app --reload  # Start API server
 ```
@@ -325,7 +328,8 @@ In the UI, **New application** accepts real PDFs/JPGs/PNGs (or one of five demo 
 | Image upload (JPG/PNG → PDF, OCR fallback, image demo scenario) | 9 | 100% |
 | Human-in-the-loop review (view/edit/rerun with corrections, correctable-PAN-error demo) | 15 | 100% |
 | Local comparables (property DB, local-valuation fallback, Square Yards cleaners) | 28 | 100% |
-| **Total** | **223** | **100%** |
+| Decision evaluation (classification/ranking/calibration metrics, CLI, labeled dataset, endpoints) | 35 | 100% |
+| **Total** | **258** | **100%** |
 
 ---
 

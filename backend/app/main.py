@@ -545,3 +545,53 @@ def _build_valuation_response(state_dict) -> dict:
 @app.get("/api/mock-external/valuation")
 async def mock_external_avm(locality: str, city: str, property_type: str, bhk: int, area_sqft: float):
     return fetch_api_valuation(locality, city, property_type, bhk, area_sqft)
+
+
+# -------------------------------------------------------
+# Decision Agent evaluation endpoints
+# -------------------------------------------------------
+
+from app.evaluation.evaluator import evaluate_cases, runtime_metrics_from_decisions  # noqa: E402
+from app.evaluation.schemas import LabeledCase  # noqa: E402
+
+
+class EvaluationRequest(BaseModel):
+    cases: list[LabeledCase]
+
+
+@app.post("/evaluation/report")
+async def evaluation_report(request: EvaluationRequest) -> dict[str, Any]:
+    """Compute full evaluation metrics over labeled cases.
+
+    Predictions come from each case's ``predicted`` field when present,
+    otherwise from audit history matched by application_id.
+    """
+    cases = request.cases
+    for case in cases:
+        if case.predicted is not None:
+            continue
+        records = audit_store.get_by_application(case.application_id)
+        for record in reversed(records):
+            final_decision = record.get("final_decision")
+            if final_decision:
+                case.predicted = DecisionResult.model_validate(final_decision)
+                break
+    missing = [c.application_id for c in cases if c.predicted is None]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No prediction available for application_ids: {missing}",
+        )
+    report = evaluate_cases(cases)
+    return report.model_dump(mode="json")
+
+
+@app.get("/evaluation/runtime")
+async def evaluation_runtime() -> dict[str, Any]:
+    """Runtime/operational metrics over all audited decisions (no labels needed)."""
+    decisions: list[DecisionResult] = []
+    for record in audit_store.get_all():
+        final_decision = record.get("final_decision")
+        if final_decision:
+            decisions.append(DecisionResult.model_validate(final_decision))
+    return runtime_metrics_from_decisions(decisions).model_dump(mode="json")

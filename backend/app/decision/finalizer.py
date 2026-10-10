@@ -120,6 +120,7 @@ def deterministic_finalize(
             compliance_status="BLOCKED",
             human_review_required=True,
             rationale="; ".join(rationale_parts),
+            gate_triggered="critical_compliance",
             evidence=_gather_all_evidence(case, risk, crew_result),
             errors=errors,
         )
@@ -135,6 +136,7 @@ def deterministic_finalize(
             key_risk_factors=risk.key_risk_factors + ["Missing required data"],
             human_review_required=True,
             rationale="; ".join(rationale_parts),
+            gate_triggered="missing_inputs",
             evidence=_gather_all_evidence(case, risk, crew_result),
             errors=errors,
         )
@@ -150,6 +152,7 @@ def deterministic_finalize(
             key_risk_factors=risk.key_risk_factors + ["Unresolved critical contradiction"],
             human_review_required=True,
             rationale="; ".join(rationale_parts),
+            gate_triggered="contradiction",
             evidence=_gather_all_evidence(case, risk, crew_result),
             errors=errors,
         )
@@ -167,6 +170,7 @@ def deterministic_finalize(
             key_risk_factors=risk.key_risk_factors + ["Low confidence"],
             human_review_required=True,
             rationale="; ".join(rationale_parts),
+            gate_triggered="low_confidence",
             evidence=_gather_all_evidence(case, risk, crew_result),
             errors=errors,
         )
@@ -182,6 +186,7 @@ def deterministic_finalize(
             key_risk_factors=risk.key_risk_factors + ["Material crew disagreement"],
             human_review_required=True,
             rationale="; ".join(rationale_parts),
+            gate_triggered="crew_disagreement",
             evidence=_gather_all_evidence(case, risk, crew_result),
             errors=errors,
         )
@@ -197,6 +202,7 @@ def deterministic_finalize(
             key_risk_factors=["Risk calculation failure"],
             human_review_required=True,
             rationale="; ".join(rationale_parts),
+            gate_triggered="risk_failure",
             evidence=_gather_all_evidence(case, risk, crew_result),
             errors=errors,
         )
@@ -270,6 +276,7 @@ def deterministic_finalize(
                 key_risk_factors=risk.key_risk_factors + ["Insufficient confidence for denial"],
                 human_review_required=True,
                 rationale="; ".join(rationale_parts),
+                gate_triggered="insufficient_confidence_for_denial",
                 evidence=_gather_all_evidence(case, risk, crew_result),
                 errors=errors,
             )

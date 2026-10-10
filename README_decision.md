@@ -24,12 +24,13 @@ The Decision Agent is the final stage of the Mortgage Underwriting System — a 
 12. [Deterministic Finalizer](#deterministic-finalizer)
 13. [Report Writer](#report-writer)
 14. [FastAPI Endpoints](#fastapi-endpoints)
-15. [Configuration](#configuration)
-16. [Pydantic Models](#pydantic-models)
-17. [Audit and HITL](#audit-and-hitl)
-18. [Error Handling](#error-handling)
-19. [Tests](#tests)
-20. [Architectural Invariants](#architectural-invariants)
+15. [Evaluation](#evaluation)
+16. [Configuration](#configuration)
+17. [Pydantic Models](#pydantic-models)
+18. [Audit and HITL](#audit-and-hitl)
+19. [Error Handling](#error-handling)
+20. [Tests](#tests)
+21. [Architectural Invariants](#architectural-invariants)
 
 ---
 
@@ -95,7 +96,9 @@ Each stage stores its output back into `UnderwritingState`. If input validation 
 ```
 backend/
 ├── config/
-│   └── risk_config.yaml                # Risk weights, bands, thresholds, LLM config
+│   └── risk_config.yaml                # Risk weights, bands, thresholds
+├── data/
+│   └── labeled_cases.json              # 32 synthetic labeled cases for evaluation
 ├── app/
 │   ├── main.py                         # FastAPI endpoints
 │   ├── agents/
@@ -109,6 +112,14 @@ backend/
 │   │   ├── confidence.py               # Deterministic confidence calculation
 │   │   ├── finalizer.py                # Authoritative safety gates + final decision
 │   │   └── report_writer.py            # 15-section underwriting report
+│   ├── evaluation/
+│   │   ├── schemas.py                  # LabeledCase + MetricsReport Pydantic models
+│   │   ├── loader.py                   # JSON loaders for cases/predictions
+│   │   ├── metrics.py                  # Classification/ranking/calibration/runtime metrics
+│   │   ├── evaluator.py                # evaluate_cases(), runtime_metrics_from_decisions()
+│   │   ├── runner.py                   # Deterministic (no-LLM) pipeline for offline eval
+│   │   ├── cli.py                      # python -m app.evaluation.cli
+│   │   └── synth.py                    # Regenerates data/labeled_cases.json (32 specs)
 │   ├── graph/
 │   │   ├── state.py                    # UnderwritingState TypedDict
 │   │   ├── workflow.py                 # LangGraph StateGraph definition
@@ -116,11 +127,9 @@ backend/
 │   │       └── decision.py             # decision_node entry point
 │   ├── models/
 │   │   └── decision.py                 # All Pydantic models/enums
-│   ├── tools/
-│   │   └── policy_validator.py         # policy validation helpers
 │   └── services/
 │       ├── audit.py                    # In-memory audit store
-│       ├── llm.py                      # LLM provider configuration
+│       ├── llm.py                      # Local LLM (Ollama) for explanations only
 │       └── report.py                   # Report JSON export
 └── tests/
     ├── conftest.py                     # 4 synthetic test cases
@@ -129,10 +138,10 @@ backend/
     ├── test_agent_comparator.py
     ├── test_risk_engine.py
     ├── test_confidence.py
-    ├── test_crew.py
     ├── test_finalizer.py
     ├── test_report_writer.py
-    └── test_e2e_pipeline.py
+    ├── test_e2e_pipeline.py
+    └── test_evaluation.py              # Metrics, loaders, CLI, endpoints, labeled dataset
 ```
 
 ---
@@ -579,6 +588,28 @@ POST /underwriting/APP-001/run
   "human_review_required": false
 }
 ```
+
+---
+
+## Evaluation
+
+**Module:** `backend/app/evaluation/` · **Dataset:** `backend/data/labeled_cases.json` (32 synthetic labeled cases)
+
+Offline evaluation of the deterministic decision pipeline against ground-truth labels, plus runtime metrics over live audit history. No LLM involved — `runner.py` replays the same `input_validator → contradiction_detector → agent_comparator → risk_engine → confidence → finalizer` chain the production `decision_node` uses (minus the rule-based crew step), so results are fast, offline, and reproducible.
+
+- **`schemas.py`** — `LabeledCase` (pipeline input + `ground_truth_decision` + optional `predicted`), `MetricsReport` (classification + ranking + calibration + runtime).
+- **`metrics.py`** — confusion matrix, per-class precision/recall/F1, balanced accuracy, a cost-weighted error that penalizes a false APPROVE on a true DENY far more than the reverse, AUC-ROC/KS-statistic/Gini (ranking `DecisionResult.risk_score` as a safety score against the binary DENY label), Brier score + expected calibration error + reliability bins (confidence calibration).
+- **`evaluator.py`** — `evaluate_cases(cases, predictions=None)` builds the full `MetricsReport`; `runtime_metrics_from_decisions(decisions)` computes suspend rate, auto-decision rate, mean confidence, below-threshold rate, and **`gate_triggered`** counts (which `DecisionResult` field recorded which hard safety gate fired — `critical_compliance`, `missing_inputs`, `contradiction`, `low_confidence`, `crew_disagreement`, `risk_failure`, `insufficient_confidence_for_denial`, or `None` for a plain score-based APPROVE/DENY/SUSPEND) from pure audit history, no labels needed.
+- **`loader.py`** — loads labeled cases / precomputed predictions from JSON (bare list or `{"cases": [...]}` / `{"predictions": [...]}`).
+- **`cli.py`** — `python -m app.evaluation.cli --dataset data/labeled_cases.json --use-pipeline [--output report.json]`, run from `backend/`.
+- **`synth.py`** — regenerates `data/labeled_cases.json` from 32 hand-specified case templates; labels are **intentionally independent of the model's predictions** (some are deliberately set to the "wrong" decision, e.g. a borderline-strong case labeled `APPROVE` by human-judgment design intent even though the conservative policy would `SUSPEND` it) so the metrics measure real precision/recall rather than circularly validating the finalizer against itself.
+
+**Endpoints:**
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/evaluation/report` | Full `MetricsReport` for a batch of `LabeledCase`s. Each case's prediction comes from its own `predicted` field, or — if omitted — the most recent audited decision for that `application_id`. 400 if any case has neither. |
+| GET | `/evaluation/runtime` | `RuntimeMetrics` over every decision in the in-memory audit store so far — no labels required. |
 
 ---
 
