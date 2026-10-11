@@ -530,6 +530,7 @@ def rerun_application(application_id: str) -> dict[str, Any]:
         file_paths: list[str] = []
         file_names: list[str] = []
         overrides_by_path: dict[str, dict[str, Any]] = {}
+        field_changes: list[dict[str, Any]] = []
         for i, doc in enumerate(doc_files):
             found = store.get_document(application_id, doc["id"])
             if found is None:
@@ -543,11 +544,24 @@ def rerun_application(application_id: str) -> dict[str, Any]:
             override = store.get_override(application_id, doc["id"])
             if override:
                 overrides_by_path[dest] = override
+                # Snapshot what this reviewer correction actually changed,
+                # before run_application() clears this run's stored documents.
+                old_parsed = store.get_parsed_fields(application_id, doc["id"]) or {}
+                old_fields = old_parsed.get("fields", {})
+                for field, new_value in override.items():
+                    field_changes.append({
+                        "document_type": doc.get("type"),
+                        "filename": filename,
+                        "field": field,
+                        "old_value": old_fields.get(field),
+                        "new_value": new_value,
+                    })
 
         if not file_paths:
             raise ValueError(f"Application '{application_id}'s stored documents could not be re-read.")
 
-        return run_application(
+        rerun_count = (original.get("rerun_count") or 0) + 1
+        view = run_application(
             profile=_profile_from_view(original),
             file_paths=file_paths,
             file_names=file_names,
@@ -556,8 +570,23 @@ def rerun_application(application_id: str) -> dict[str, Any]:
             bureau_consent=(original.get("bureau_consent") or {}).get("given", False),
             field_overrides=overrides_by_path,
             application_id=application_id,
-            rerun_count=(original.get("rerun_count") or 0) + 1,
+            rerun_count=rerun_count,
         )
+
+        original_decision = original.get("decision") or {}
+        new_decision = view.get("decision") or {}
+        version_entry = {
+            "version": rerun_count,
+            "created_at": view.get("created_at"),
+            "decision_before": original_decision.get("decision"),
+            "decision_after": new_decision.get("decision"),
+            "risk_score_before": original_decision.get("risk_score"),
+            "risk_score_after": new_decision.get("risk_score"),
+            "field_changes": field_changes,
+        }
+        view["version_history"] = (original.get("version_history") or []) + [version_entry]
+        store.save(view)
+        return view
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

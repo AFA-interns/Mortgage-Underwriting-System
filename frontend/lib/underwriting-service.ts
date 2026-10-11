@@ -35,6 +35,24 @@ export type ReviewItem = {
   resolved_at?: string
 }
 
+export type FieldChange = {
+  document_type: string
+  filename: string
+  field: string
+  old_value: unknown
+  new_value: unknown
+}
+
+export type VersionHistoryEntry = {
+  version: number
+  created_at: string
+  decision_before: string | null
+  decision_after: string | null
+  risk_score_before: number | null
+  risk_score_after: number | null
+  field_changes: FieldChange[]
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type ApplicationView = {
   id: string
@@ -68,6 +86,7 @@ export type ApplicationView = {
   errors: string[]
   review_items: ReviewItem[]
   rerun_count?: number
+  version_history?: VersionHistoryEntry[]
 }
 
 export type DemoScenario = {

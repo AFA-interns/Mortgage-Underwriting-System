@@ -196,6 +196,61 @@ def test_correctable_pan_error_demo_scenario_approves_after_fix():
     assert rerun["decision"]["decision"] == "APPROVE"
 
 
+def test_rerun_records_a_version_history_entry_with_the_field_change():
+    """The mentor-requested bit: one application id, but a reviewer must
+    still be able to see what changed and what it did to the decision."""
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS):
+        r = client.post("/api/v1/underwriting/run", data={"demo_scenario": "correctable_pan_error"})
+    view = r.json()
+    assert view["decision"]["decision"] == "SUSPEND"
+    assert not view.get("version_history")
+
+    doc = _pan_doc(view)
+    client.put(
+        f"/api/v1/applications/{view['id']}/documents/{doc['id']}/parsed",
+        json={"overrides": {"pan_number": "ABCPS1234F"}},
+    )
+    rerun = _rerun(view["id"]).json()
+
+    history = rerun["version_history"]
+    assert len(history) == 1
+    entry = history[0]
+    assert entry["version"] == 1
+    assert entry["decision_before"] == "SUSPEND"
+    assert entry["decision_after"] == "APPROVE"
+
+    changes = entry["field_changes"]
+    assert len(changes) == 1
+    assert changes[0]["document_type"] == "PAN_CARD"
+    assert changes[0]["field"] == "pan_number"
+    # The malformed "NOT-A-VALID-PAN" string doesn't match the PAN
+    # extraction regex at all, so nothing was extracted for it originally.
+    assert changes[0]["old_value"] is None
+    assert changes[0]["new_value"] == "ABCPS1234F"
+
+
+def test_rerun_accumulates_version_history_across_multiple_reruns():
+    view = _run_clean_demo()
+    doc = _pan_doc(view)
+
+    client.put(
+        f"/api/v1/applications/{view['id']}/documents/{doc['id']}/parsed",
+        json={"overrides": {"father_name": "Ramesh Sharma Updated"}},
+    )
+    first = _rerun(view["id"]).json()
+    assert len(first["version_history"]) == 1
+    assert first["version_history"][0]["version"] == 1
+
+    doc2 = _pan_doc(first)
+    client.put(
+        f"/api/v1/applications/{view['id']}/documents/{doc2['id']}/parsed",
+        json={"overrides": {"father_name": "Ramesh Sharma"}},
+    )
+    second = _rerun(view["id"]).json()
+    assert len(second["version_history"]) == 2
+    assert [e["version"] for e in second["version_history"]] == [1, 2]
+
+
 def test_rerun_persists_the_original_bureau_data_unchanged():
     """A rerun should isolate the document correction - it must not also
     silently roll a new simulated credit score under a new application id."""

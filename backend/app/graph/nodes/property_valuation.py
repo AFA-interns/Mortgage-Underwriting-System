@@ -114,9 +114,8 @@ def property_valuation_node(
     # ---------------------------------------------------------
     # SCRAPED COMPARABLES DATABASE (SquareYards/Housing/MagicBricks/...)
     # ---------------------------------------------------------
-    # get_comparables() is async (its own DB session); get_comparables_sync()
-    # bridges it so this node stays a plain sync graph node like the rest of
-    # the shared underwriting pipeline.
+    # Reads via get_comparables_sync() (sync psycopg), not the async
+    # get_comparables() - see that function's docstring for why.
 
     db_comps = get_comparables_sync(
         locality=locality,

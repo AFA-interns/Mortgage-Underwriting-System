@@ -8,6 +8,17 @@ database, matching the rest of the project's "degrade, don't crash"
 pattern: with no DATABASE_URL configured, get_comparables() (see
 app.tools.comparables_db) simply returns no comparables instead of
 raising at import time.
+
+Known issue: on at least one development machine, asyncpg intermittently
+fails authentication against a DATABASE_URL the sync psycopg path (see
+app.services.property_db) connects with 100% reliably - isolated across
+URL construction, SSL mode, pooling, event loop policy and import order
+without finding a fix at this layer; the outcome is decided once per
+process, before any query runs. Because of that, the live request-serving
+pipeline reads comparables via app.tools.comparables_db.get_comparables_sync()
+(sync psycopg), not the async get_comparables() in this module - this
+module stays in place for property_data's own async scraper/ingestion
+scripts, where that unreliability matters less.
 """
 from __future__ import annotations
 

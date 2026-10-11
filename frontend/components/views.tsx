@@ -9,6 +9,7 @@ import {
 import {
   documentUrl, formatInr, formatPct, formatSize, humanizeField, underwritingService,
   type ApplicationView, type DemoScenario, type ParsedDocument, type ReviewItem, type Stage,
+  type VersionHistoryEntry,
 } from '@/lib/underwriting-service'
 import { getDashboardMetrics } from '@/lib/dashboard-service'
 import { KeyValues, MetricBar, StatCard, StatusPill, stageTone, statusTone } from '@/components/ui-bits'
@@ -300,6 +301,8 @@ export function Detail({ app, setView, onReviewDocuments }: { app: ApplicationVi
         <p>{d.rationale}</p>
       </div>
 
+      {!!app.version_history?.length && <VersionHistoryPanel history={app.version_history} />}
+
       <section className="panel doc-panel" data-testid="doc-panel">
         <div><h3>Submitted documents</h3><p className="muted">Stored source PDFs — open to verify, or review to correct a misread field.</p></div>
         <DocumentLinks app={app} onReview={onReviewDocuments ? (docId) => onReviewDocuments(docId) : undefined} />
@@ -346,6 +349,50 @@ export function Detail({ app, setView, onReviewDocuments }: { app: ApplicationVi
       </div>
       {app.errors.length > 0 && <div className="risk-callout amber"><strong>Pipeline notes</strong><span>{app.errors.join(' · ')}</span></div>}
     </div>
+  )
+}
+
+/* ------------------------------------------------------- version history */
+
+function VersionHistoryPanel({ history }: { history: VersionHistoryEntry[] }) {
+  const entries = [...history].reverse() // most recent correction first
+  return (
+    <section className="panel doc-panel" data-testid="version-history-panel">
+      <div style={{ width: '100%' }}>
+        <h3>Version history</h3>
+        <p className="muted">One application id throughout — each correction below is a rerun of this same case, not a new application.</p>
+        <div className="compliance-checks" style={{ marginTop: 14 }}>
+          {entries.map((entry) => (
+            <div key={entry.version} style={{ padding: '13px 15px', borderBottom: '1px solid var(--border)' }}>
+              <div className="compliance-row" style={{ padding: 0, border: 0 }}>
+                <div>
+                  <strong>Version {entry.version}</strong>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#8091a4', fontSize: 11, marginTop: 3 }}>
+                    <Clock3 size={12} /> {new Date(entry.created_at).toLocaleString()}
+                  </span>
+                </div>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#5b718a' }}>
+                  {entry.decision_before ?? '—'} <ArrowRight size={13} />{' '}
+                  <strong style={{ color: entry.decision_after === 'APPROVE' ? '#18825e' : '#b84d47' }}>
+                    {entry.decision_after ?? '—'}
+                  </strong>
+                </span>
+              </div>
+              {entry.field_changes.length > 0 && (
+                <div className="field-summary" style={{ marginTop: 10 }}>
+                  {entry.field_changes.map((c, i) => (
+                    <span key={i}>
+                      {humanizeField(c.field)} <small className="muted">({c.document_type.replace(/_/g, ' ')})</small>
+                      <b>{String(c.old_value ?? '—')} → {String(c.new_value ?? '—')}</b>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -410,7 +457,7 @@ function AgentDetail({ app, id }: { app: ApplicationView; id: string }) {
           <div><span>Estimated value</span><strong>{formatInr(p.estimated_value)}</strong><small>Range {formatInr(p.market_range_low)} – {formatInr(p.market_range_high)}</small></div>
           <div><span>₹ / sq.ft. (median)</span><strong>{p.price_per_sqft ? `₹${Math.round(p.price_per_sqft).toLocaleString('en-IN')}` : '—'}</strong><small>{(p.comparables ?? []).length} comparables · {p.scope ?? '—'}-level</small></div>
         </div>
-        {comps.length > 0 && <><h4>Comparable listings</h4><div className="table-wrap report-table"><table><thead><tr><th>Listing</th><th>Locality</th><th>Area</th><th>Price</th><th>₹ / sq.ft.</th></tr></thead><tbody>{comps.map((c) => <tr key={c.listing_id}><td>{c.title}</td><td>{c.locality}</td><td>{Math.round(c.area_sqft).toLocaleString('en-IN')} sq.ft.</td><td>{formatInr(c.price_inr)}</td><td>₹{Math.round(c.price_per_sqft_inr).toLocaleString('en-IN')}</td></tr>)}</tbody></table></div></>}
+        {comps.length > 0 && <><h4>Comparable listings</h4><div className="table-wrap report-table"><table><thead><tr><th>Listing</th><th>Locality</th><th>Area</th><th>Price</th><th>₹ / sq.ft.</th></tr></thead><tbody>{comps.map((c, i) => <tr key={c.listing_id ?? c.id ?? c.source_url ?? i}><td>{c.title ?? c.property_type ?? '—'}</td><td>{c.locality}</td><td>{Math.round(c.area_sqft).toLocaleString('en-IN')} sq.ft.</td><td>{formatInr(c.price_inr)}</td><td>₹{Math.round(c.price_per_sqft_inr).toLocaleString('en-IN')}</td></tr>)}</tbody></table></div></>}
         {p.location?.formatted_address && <div className="calculation-note"><strong>Geocoded location</strong><span>{p.location.formatted_address}</span></div>}
         <div className="calculation-note"><strong>Explanation</strong><span>{p.explanation}</span></div>
         {(p.flags ?? []).length > 0 && <div className="risk-callout amber"><strong>Valuation risk flags</strong><span>{p.flags.join(' · ')}</span></div>}

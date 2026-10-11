@@ -25,10 +25,8 @@ def comps_node(state: AgentState) -> AgentState:
     (SquareYards/Housing/MagicBricks/..., see property_data/ and
     app.tools.comparables_db) - quality-scored and deduplicated.
 
-    get_comparables() is async (it opens its own async DB session);
-    get_comparables_sync() bridges it so this node stays a plain sync
-    LangGraph node like the rest of the graph, whether or not the calling
-    endpoint happens to be running on an active event loop.
+    Reads via get_comparables_sync() (sync psycopg), not the async
+    get_comparables() - see that function's docstring for why.
     """
     prop = state.get("property", {})
     comps = get_comparables_sync(
