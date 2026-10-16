@@ -1,21 +1,21 @@
 """
 Benchmark Evaluation Dataset and Ground Truth Definitions for Document Ingestion Agent.
 Includes 40 labeled Indian home loan application cases:
-- 15 Clean Prime Salaried cases
-- 8 Name Discrepancy cases
-- 7 Income / Banking Variance cases
-- 6 Missing Mandatory Document cases
-- 4 Low-Quality Scan & Noise cases
+- 15 Clean Prime Salaried cases (expected: PROCEED)
+- 8 Name Discrepancy cases (spelling variants: PROCEED after re-match; genuine conflicts: REQUEST_RESUBMISSION)
+- 7 Income / Banking Variance cases (within variance limit: PROCEED_CONSERVATIVE; beyond: REQUEST_RESUBMISSION)
+- 6 Missing Mandatory Document cases (expected: REQUEST_RESUBMISSION)
+- 4 Low-Quality Scan & Noise cases (recoverable: PROCEED; unrecoverable: REQUEST_RESUBMISSION)
 """
 
 from typing import List, Dict, Any
 
 
 def get_benchmark_dataset() -> List[Dict[str, Any]]:
-    """Returns the benchmark labeled evaluation dataset."""
+    """Returns the benchmark labeled evaluation dataset with expected automated outcomes."""
     cases = []
 
-    # 1. 15 Clean Prime Salaried Cases
+    # 1. 15 Clean Prime Salaried Cases -> Expected: PROCEED
     prime_names = [
         ("Aarav Sharma", "ABCPS1234F", "Tata Consultancy Services Ltd", 150000.0, 124600.0),
         ("Aditya Verma", "ABCPV5678G", "Infosys Limited", 135000.0, 112000.0),
@@ -44,23 +44,26 @@ def get_benchmark_dataset() -> List[Dict[str, Any]]:
             "gross_salary": gross,
             "net_salary": net,
             "has_contradiction": False,
-            "expected_hitl": False,
+            "expected_automated_outcome": "PROCEED",
+            "expected_hitl": False,  # Legacy field
             "expected_confidence_min": 0.90,
             "doc_types_included": ["PAN_CARD", "AADHAAR_CARD", "SALARY_SLIP", "FORM_16", "BANK_STATEMENT", "PROPERTY_DEED"],
         })
 
     # 2. 8 Name Discrepancy Cases
+    # Minor spelling variants (4 cases) -> PROCEED after re-match
+    # Genuine conflicts (4 cases) -> REQUEST_RESUBMISSION
     name_cases = [
-        ("Priya Suresh Patel", "Priya S. Patel", "Priya Patel", "ABCPP5678K"),
-        ("Suresh Kumar Menon", "Suresh K. Menon", "Suresh Menon", "ABCPM1234A"),
-        ("Vikramaditya Singh", "Vikram Singh", "Vikramaditya Singh", "ABCPS5678B"),
-        ("Lakshmi Narayanan", "Laxmi Narayanan", "Lakshmi N.", "ABCPL9012C"),
-        ("Mohammed Rizwan Khan", "Md. Rizwan Khan", "Rizwan Khan", "ABCPK3456D"),
-        ("Harshvardhan Rathi", "Harsh V. Rathi", "Harshvardhan Rathi", "ABCPR7890E"),
-        ("Shweta Ananthakrishnan", "Shweta A.", "Shweta Ananth", "ABCPA2345F"),
-        ("Gurpreet Singh Sodhi", "Gurpreet S. Sodhi", "Gurpreet Singh", "ABCPS6789G"),
+        ("Priya Suresh Patel", "Priya S. Patel", "Priya Patel", "ABCPP5678K", "PROCEED"),          # minor initial variant
+        ("Suresh Kumar Menon", "Suresh K. Menon", "Suresh Menon", "ABCPM1234A", "PROCEED"),         # minor initial variant
+        ("Vikramaditya Singh", "Vikram Singh", "Vikramaditya Singh", "ABCPS5678B", "PROCEED"),      # abbreviation variant
+        ("Lakshmi Narayanan", "Laxmi Narayanan", "Lakshmi N.", "ABCPL9012C", "PROCEED"),            # phonetic transliteration variant
+        ("Mohammed Rizwan Khan", "Md. Rizwan Khan", "Rizwan Ahmed", "ABCPK3456D", "REQUEST_RESUBMISSION"),  # surname conflict
+        ("Harshvardhan Rathi", "Harsh V. Rathi", "Harshvardhan Sharma", "ABCPR7890E", "REQUEST_RESUBMISSION"), # surname conflict
+        ("Shweta Ananthakrishnan", "Shweta A.", "Shweta Mukherjee", "ABCPA2345F", "REQUEST_RESUBMISSION"),     # surname conflict
+        ("Gurpreet Singh Sodhi", "Gurpreet S. Sodhi", "Gurpreet Kaur", "ABCPS6789G", "REQUEST_RESUBMISSION"),  # gendered surname conflict
     ]
-    for idx, (n_pan, n_aadh, n_sal, pan) in enumerate(name_cases):
+    for idx, (n_pan, n_aadh, n_sal, pan, exp_outcome) in enumerate(name_cases):
         cases.append({
             "case_id": f"BENCH-NAME-{idx+1:03d}",
             "category": "NAME_DISCREPANCY",
@@ -69,22 +72,25 @@ def get_benchmark_dataset() -> List[Dict[str, Any]]:
             "salary_name": n_sal,
             "pan_number": pan,
             "has_contradiction": True,
+            "expected_automated_outcome": exp_outcome,
             "expected_hitl": True,
             "expected_confidence_max": 0.84,
             "doc_types_included": ["PAN_CARD", "AADHAAR_CARD", "SALARY_SLIP"],
         })
 
     # 3. 7 Income / Banking Discrepancy Cases
+    # Within variance limit (e.g. up to 10-15%) -> PROCEED_CONSERVATIVE
+    # Beyond variance limit (> 30% gap) -> REQUEST_RESUBMISSION
     income_cases = [
-        ("Vikram Malhotra", 180000.0, 160000.0, 85000.0, "Apex Retail Solutions"),  # 46% mismatch
-        ("Rahul Sengupta", 140000.0, 115000.0, 60000.0, "Zenith Logistics"),       # 47% mismatch
-        ("Amitabh Sen", 200000.0, 165000.0, 95000.0, "Apex Builders Pvt Ltd"),      # 42% mismatch
-        ("Karthik Sundaram", 110000.0, 92000.0, 45000.0, "Matrix Media"),          # 51% mismatch
-        ("Naveen Reddy", 150000.0, 125000.0, 70000.0, "Venture Enterprises"),       # 44% mismatch
-        ("Anuradha Roy", 130000.0, 108000.0, 50000.0, "Delta Manufacturing"),      # 53% mismatch
-        ("Praveen Chawla", 165000.0, 138000.0, 80000.0, "Pinnacle Consultancy"),   # 42% mismatch
+        ("Vikram Malhotra", 180000.0, 160000.0, 148000.0, "Apex Retail Solutions", "PROCEED_CONSERVATIVE"), # ~7.5% gap (within limit)
+        ("Rahul Sengupta", 140000.0, 115000.0, 105000.0, "Zenith Logistics", "PROCEED_CONSERVATIVE"),       # ~8.7% gap (within limit)
+        ("Amitabh Sen", 200000.0, 165000.0, 150000.0, "Apex Builders Pvt Ltd", "PROCEED_CONSERVATIVE"),     # ~9.0% gap (within limit)
+        ("Karthik Sundaram", 110000.0, 92000.0, 45000.0, "Matrix Media", "REQUEST_RESUBMISSION"),            # 51% gap (beyond limit)
+        ("Naveen Reddy", 150000.0, 125000.0, 70000.0, "Venture Enterprises", "REQUEST_RESUBMISSION"),        # 44% gap (beyond limit)
+        ("Anuradha Roy", 130000.0, 108000.0, 50000.0, "Delta Manufacturing", "REQUEST_RESUBMISSION"),       # 53% gap (beyond limit)
+        ("Praveen Chawla", 165000.0, 138000.0, 80000.0, "Pinnacle Consultancy", "REQUEST_RESUBMISSION"),    # 42% gap (beyond limit)
     ]
-    for idx, (name, gross, net, bank_cr, emp) in enumerate(income_cases):
+    for idx, (name, gross, net, bank_cr, emp, exp_outcome) in enumerate(income_cases):
         cases.append({
             "case_id": f"BENCH-INCOME-{idx+1:03d}",
             "category": "INCOME_DISCREPANCY",
@@ -94,11 +100,12 @@ def get_benchmark_dataset() -> List[Dict[str, Any]]:
             "bank_credited_salary": bank_cr,
             "employer_name": emp,
             "has_contradiction": True,
+            "expected_automated_outcome": exp_outcome,
             "expected_hitl": True,
             "doc_types_included": ["PAN_CARD", "SALARY_SLIP", "BANK_STATEMENT"],
         })
 
-    # 4. 6 Missing Mandatory Document Cases
+    # 4. 6 Missing Mandatory Document Cases -> Expected: REQUEST_RESUBMISSION
     missing_cases = [
         ("Rahul Verma", ["PAN_CARD", "SALARY_SLIP"], ["Aadhaar Card", "Bank Statement", "Property Deed"]),
         ("Sunil Kumar", ["AADHAAR_CARD", "BANK_STATEMENT"], ["PAN Card", "Income Proof", "Property Deed"]),
@@ -115,18 +122,21 @@ def get_benchmark_dataset() -> List[Dict[str, Any]]:
             "provided_docs": provided,
             "missing_docs": missing,
             "has_contradiction": False,
+            "expected_automated_outcome": "REQUEST_RESUBMISSION",
             "expected_hitl": True,
             "doc_types_included": provided,
         })
 
     # 5. 4 Low-Quality Scan & Noise Cases
+    # Recoverable (noise_cer < 0.07) -> PROCEED
+    # Otherwise -> REQUEST_RESUBMISSION
     scan_cases = [
-        ("Tarun Bajaj", "ABCPB1122C", "Skewed and noisy PAN image", 0.08, 0.86),
-        ("Meera Saxena", "XXXX-XXXX-9911", "Low-contrast Aadhaar scan", 0.06, 0.88),
-        ("Girish Pandey", "1100045612", "Faded thermal printed bank statement", 0.09, 0.82),
-        ("Rekha Swaminathan", "BNG-2026-99", "Watermarked property deed scan", 0.05, 0.89),
+        ("Tarun Bajaj", "ABCPB1122C", "Skewed and noisy PAN image", 0.08, 0.86, "REQUEST_RESUBMISSION"),
+        ("Meera Saxena", "XXXX-XXXX-9911", "Low-contrast Aadhaar scan", 0.06, 0.88, "PROCEED"),
+        ("Girish Pandey", "1100045612", "Faded thermal printed bank statement", 0.09, 0.82, "REQUEST_RESUBMISSION"),
+        ("Rekha Swaminathan", "BNG-2026-99", "Watermarked property deed scan", 0.05, 0.89, "PROCEED"),
     ]
-    for idx, (name, id_val, note, noise_cer, expected_f1) in enumerate(scan_cases):
+    for idx, (name, id_val, note, noise_cer, expected_f1, exp_outcome) in enumerate(scan_cases):
         cases.append({
             "case_id": f"BENCH-SCAN-{idx+1:03d}",
             "category": "LOW_QUALITY_SCAN",
@@ -136,6 +146,7 @@ def get_benchmark_dataset() -> List[Dict[str, Any]]:
             "simulated_cer": noise_cer,
             "expected_token_f1": expected_f1,
             "has_contradiction": False,
+            "expected_automated_outcome": exp_outcome,
             "expected_hitl": False if noise_cer < 0.07 else True,
             "doc_types_included": ["PAN_CARD", "AADHAAR_CARD", "SALARY_SLIP"],
         })

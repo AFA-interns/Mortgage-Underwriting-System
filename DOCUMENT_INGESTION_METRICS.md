@@ -2,246 +2,297 @@
 # Evaluation Metrics & Rationale
 
 **Mortgage Underwriting System**  
-*India-focused • Decision-support • Human-in-the-loop*
+*India-focused • Fully automated • No human review in the decision path*
 
-> **Purpose:** Document what each Document Ingestion Agent metric measures, why it was selected, and how it supports high-fidelity extraction, deterministic Indian regulatory validation, cross-document reconciliation, and safe human-in-the-loop routing.
+> **Purpose:** Document what each Document Ingestion Agent metric measures, why it was selected, and how it supports safe, explainable underwriting evaluation when every case is resolved by the agent without human validation.
 
 ---
 
 ## 1. Evaluation Context
 
-The **Document Ingestion Agent (Agent 1 - Owner: Tejasva)** is evaluated as a hybrid neuro-symbolic extraction and reconciliation system. Its architecture performs:
-1. **Multi-format Document Intake & Classification** (identifying PAN, Aadhaar, Salary Slips, Form 16, ITR, Bank Statements, Property Deeds, and Unknown files).
-2. **Text & Tabular Extraction** using spatial PDF parsers (`PyMuPDF`, `pdfplumber`).
-3. **Structured Field Extraction** into strongly typed Pydantic models with field-level provenance tracking.
-4. **Deterministic Validation** against Indian banking, tax, and identity formats (PAN regex, Aadhaar masking, IFSC codes, and salary arithmetic).
-5. **Cross-Document Reconciliation Matrix** (fuzzy name resolution across KYC/banking, employer consistency, payslip vs. bank deposit matching, and recurring EMI liability detection).
-6. **Confidence Calibration & Human-in-the-Loop (HITL) Safety Gate Finalization**.
+The Document Ingestion Agent is evaluated as a **fully automated hybrid system**. Its spatial extraction core performs multi-format document intake, layout text parsing, structured Pydantic schema extraction, field provenance tracking, deterministic validation, cross-document reconciliation, and finalization. The deterministic layer remains authoritative for all regulatory and financial rules. 
 
-For each submitted loan application bundle, the key outputs produced are:
+**No case is routed to a human reviewer**: every case ends in an automated outcome, and when the evidence is uncertain the agent takes the most conservative outcome, never `PROCEED`.
 
-| Output | Range / Type | Meaning / Downstream Role |
+### Key Outputs Produced
+
+| Output | Range / Type | Meaning |
+| :--- | :--- | :--- |
+| `document_type` | Enum (8 classes) | `PAN_CARD`, `AADHAAR`, `SALARY_SLIP`, `FORM_16`, `ITR`, `BANK_STMT`, `PROPERTY`, `UNKNOWN` |
+| `field_extractions` | Pydantic Models | Structured borrower KYC, income, banking aggregates, and property specifications |
+| `provenance` | Doc + Page + Snippet | Audit trail establishing the exact source evidence for every extracted value |
+| `confidence` | 0–1 | Evidence reliability; 0.85 or above is the condition for `PROCEED` |
+| `gate_triggered` | e.g. `missing_docs` | Safety gate that fired; selects the automated action |
+| `automated_disposition` *(new)* | Enum (4 outcomes) | Outcome of the case, with no human step |
+
+### Automated Outcomes Hierarchy
+
+| Automated outcome | State | What happens |
 | :--- | :---: | :--- |
-| `document_type` | Enum (8 classes) | Classified document category (PAN, Aadhaar, Payslip, Form 16, ITR, Bank, Property, Unknown). |
-| `field_extractions` | Typed Pydantic Objects | Extracted borrower KYC, income figures, banking aggregates, and property specifications. |
-| `provenance` | Document + Page + Text Snippet | Auditability trail establishing exact source evidence for every extracted value. |
-| `is_valid_format` | Boolean (per field/rule) | Deterministic pass/fail against Indian regulatory standards (PAN, Aadhaar, IFSC, Math). |
-| `reconciliation_score` | 0.0 – 1.0 | Degree of consistency across multi-document entity pairs. |
-| `contradictions` | List of Strings | Explicit discrepancies flagged (e.g. name mismatch, salary vs bank credit variance). |
-| `overall_confidence` | 0.0 – 1.0 | Composite evidence extraction reliability score (threshold $\ge 0.85$ for auto-proceed). |
-| `requires_human_review` | Boolean & Priority | Safety gate routing cases with low confidence, missing mandatory docs, or contradictions to human underwriters. |
+| `PROCEED` | Terminal | All checks pass and confidence is 0.85 or above; data goes to the credit agent as extracted. |
+| `PROCEED_CONSERVATIVE` | Terminal | The case continues on the lower, more cautious verified value; the discrepancy is attached so downstream agents see it. |
+| `REQUEST_RESUBMISSION` | Pending | The agent sends the borrower an automatic request naming the missing, unreadable or conflicting document. The case is parked on a timer and re-enters the pipeline when files arrive. |
+| `CLOSE_UNRESOLVED` | Terminal | The timeout expires, the maximum number of attempts is reached, or a hard conflict stays unresolved; the case is closed with the reasons recorded. |
 
-Two metric families are therefore required:
-1. **Correctness & Extraction Quality Metrics**: Compare classifications, extracted field tokens, arithmetic validation, and reconciliation findings against labeled ground truth.
-2. **Runtime / Operational Metrics**: Measure throughput, straight-through processing (STP) rate, safety gate trigger distributions, and confidence stability from live audit trails without requiring labels.
+- **Conservativeness order, most to least:**  
+  $$\text{CLOSE\_UNRESOLVED} > \text{REQUEST\_RESUBMISSION} > \text{PROCEED\_CONSERVATIVE} > \text{PROCEED}$$  
+  When several triggers fire on one case, the most conservative outcome wins. The same order is used to score false accepts and false rejects (section 7).
+- **Termination and re-entry:** A pending case becomes `CLOSE_UNRESOLVED` when the resubmission timeout expires or the maximum number of attempts is reached; both are configuration values (section 7), so every case reaches a terminal outcome. When files arrive, the whole case is re-evaluated on the union of old and new documents, the new result supersedes the old one, and the audit trail is append-only.
+- **Three metric families are required:** (1) correctness metrics against labeled ground truth, (2) calibration metrics for the confidence score, and (3) automation and safety metrics measured from the audit trail.
 
 ---
 
 ## 2. Dataset and Ground Truth
 
-The benchmark evaluation dataset contains **40 labeled Indian home loan application bundles** comprising over **160 individual document files**. Ground-truth labels and field annotations are assigned independently by domain underwriters:
+The shipped evaluation dataset contains **40 labeled synthetic cases** comprising over **160 individual files**. Labels are assigned independently from model predictions according to underwriting design intent, avoiding self-confirmation. The 25 edge cases that human review used to catch now each need an expected automated outcome.
 
-- **Class & Bundle Distribution**:
-  - `15 Clean Prime Salaried` bundles (Aarav Sharma - TCS archetype: matching KYC, 3-month payslips, Form 16, 6-month HDFC statement, registered sale deed).
-  - `8 Name Discrepancy & Alias` bundles (Priya Suresh Patel vs. Priya S. Patel vs. Priya Patel; initials and spelling variants).
-  - `7 Income & Banking Variance` bundles (Vikram Malhotra archetype: payslip net pay ₹1.6L vs bank credit ₹85k; cash deposits; bonus distortions).
-  - `6 Missing Mandatory Document` bundles (Rahul Verma archetype: missing Aadhaar KYC, 6-month bank statement, or property papers).
-  - `4 Low-Quality Scan & Noise` bundles (thermal prints, skew, faded contrast, and artifacts).
-- **Edge cases & Safety Gates**: Contradictions, arithmetic ledger mismatches, and unmasked Aadhaar formats are deliberately included to test safety guardrails.
+| Case class | Cases | Rule for the expected automated outcome |
+| :--- | :---: | :--- |
+| **Clean Prime Salaried** | 15 | `PROCEED` |
+| **Name Discrepancy** | 8 | Minor spelling variant: `PROCEED` after re-match. Genuine conflict: `REQUEST_RESUBMISSION`. |
+| **Income Variance** | 7 | Within the variance limit: `PROCEED_CONSERVATIVE`. Beyond it: `REQUEST_RESUBMISSION`. |
+| **Missing Docs** | 6 | `REQUEST_RESUBMISSION` |
+| **Low-Quality Scans** | 4 | Recoverable by design: `PROCEED`. Otherwise: `REQUEST_RESUBMISSION`. |
+
+- **Evaluation Principles:**
+  - Each case receives exactly one expected outcome; the table gives the rule for choosing it. The benchmark scores the first-pass outcome, because no borrower reply is simulated.
+  - Borderline cases are deliberately included, including minor spelling variants and variable payslip bonuses.
+  - Safety-gate cases include `missing_mandatory_docs`, `salary_discrepancy`, `name_contradiction`, and `unmasked_aadhaar`.
+  - The source does not say which name cases are spelling variants or which income cases exceed the variance limit, so those labels must be set per case. This is a one-time labeling task, not a review step in the live pipeline.
+  - Add cases with forged or spliced documents; an unattended system has no one to notice them (section 10).
+  - For production evaluation, supplement the synthetic labels with historical underwritten outcomes.
 
 ---
 
-## 3. Classification & Intake Metrics
+## 3. Classification Metrics
 
-Classification metrics evaluate whether uploaded borrower files are correctly assigned to their respective document categories.
+Classification metrics evaluate whether the predicted document type matches the labeled ground truth across all 8 classes. None of them depend on a reviewer.
 
-### 3.1 Accuracy and Balanced Accuracy
-$$\text{Accuracy} = \frac{\text{Correct Document Predictions}}{\text{Total Documents}}$$
-$$\text{Balanced Accuracy} = \frac{1}{K} \sum_{k=1}^{K} \text{Recall}_k$$
-
-- **Significance:** Accuracy gives a rapid global correctness measure, while balanced accuracy prevents common documents (such as monthly payslips) from concealing poor classification on rare, high-stakes documents (such as Form 16 Part A/B or Property Deeds).
-- **Why Chosen:** Underwriting packages contain unequal class distributions (e.g., 3–6 salary slips per applicant vs. only 1 PAN card). Balanced accuracy guarantees that every document type is evaluated with equal importance.
-
-### 3.2 Per-Class Precision, Recall, and F1
-$$\text{Precision} = \frac{\text{TP}}{\text{TP} + \text{FP}}, \quad \text{Recall} = \frac{\text{TP}}{\text{TP} + \text{FN}}, \quad \text{F1} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}$$
-
-| Document Class | What Precision Tells Us | What Recall Tells Us |
+| Metric | Definition | Why chosen |
 | :--- | :--- | :--- |
-| `PAN_CARD` | Guarantees tax identity is genuine; limits false KYC. | Ensures mandatory tax identity proof is not overlooked. |
-| `AADHAAR_CARD` | Confirms valid resident UIDAI identification. | Ensures mandatory residential address proof is captured. |
-| `SALARY_SLIP` | Prevents mislabeling unstructured letters as income proofs. | Ensures all submitted earnings periods are ingested. |
-| `FORM_16` | Ensures annual employer tax certificates are verified. | Captures statutory annual income verification. |
-| `BANK_STATEMENT` | Ensures complex financial ledgers are parsed properly. | Critical safety recall: prevents missing banking cash flows. |
-| `PROPERTY_DEED` | Ensures legal title documents are routed to valuation. | Ensures property collateral data is never skipped. |
+| **Accuracy and balanced accuracy** | Correct predictions ÷ total cases; mean of per-class recall. | Package class mixes are unequal. Balanced accuracy stops a payslip-heavy mix hiding weak Form 16 or Property results. |
+| **Per-class precision, recall, F1** | $\text{Precision} = \frac{\text{TP}}{\text{TP} + \text{FP}}$; $\text{Recall} = \frac{\text{TP}}{\text{TP} + \text{FN}}$; F1 is their harmonic mean. | Categories have unequal business consequences; `BANK_STMT` recall is the key safety guardrail. |
+| **Macro and weighted averages** | Equal weight per class; weight by class support. | Macro gives a class-fair view; weighted reflects the real case mix. |
+| **Confusion matrix** | Actual versus predicted type across all 8 classes. | Shows which error occurred: Bank read as Salary Slip is far worse than a scan sent to `UNKNOWN`. |
+| **Cost-weighted error** | $\sum \text{cost}[\text{truth}][\text{prediction}] \div \text{total documents}$. | Errors are asymmetric; `BANK` read as `SALARY` has the highest prototype cost because it can book unverified credit. |
 
-- **Why Chosen:** The business impact of misclassification is asymmetric. Misclassifying a Bank Statement as an arbitrary document can cause an unverified credit approval, making high Recall on financial proofs a critical safety requirement.
+### Per-Class Precision & Recall Significance across all 8 Classes
 
-### 3.3 Confusion Matrix
-Tabulates actual versus predicted document types across all 8 classes.
-- **Why Chosen:** Discloses exact cross-classification patterns (e.g., whether Form 16 Part B is ever misclassified as an ITR-V) rather than reducing multi-class behavior to a single scalar.
+| Class | Precision tells us | Recall tells us |
+| :--- | :--- | :--- |
+| `PAN_CARD` | How cleanly PANs are identified; limits false KYC. | Whether mandatory tax identity proof is captured. |
+| `AADHAAR` | How reliably resident Aadhaar cards are identified. | Whether mandatory residential address proof is captured. |
+| `SALARY_SLIP` | Limits false income proofs; avoids unstructured noise. | Whether all submitted monthly earnings periods are caught. |
+| `FORM_16` | How justified annual tax certificate extractions are. | Whether statutory annual income proofs are caught. |
+| `ITR` | How cleanly income tax returns are identified; limits false income proofs. | Whether filed-return income evidence is captured. |
+| `BANK_STMT` | How accurately multi-page transaction ledgers are parsed. | Whether banking cash flows are caught; the most safety-critical recall. |
+| `PROPERTY` | How cleanly collateral title deeds are identified. | Whether property collateral evidence avoids omission. |
+| `UNKNOWN` | How often a file sent to `UNKNOWN` is truly unclassifiable; every wrong `UNKNOWN` triggers a borrower request. | Whether unclassifiable files are caught instead of forced into a wrong class. |
 
-### 3.4 Asymmetric Ingestion Cost Matrix
-The evaluation applies the following prototype cost penalty matrix:
+*Note: All 8 classes are covered explicitly.*
 
-| Actual \ Predicted | `PAN` | `AADHAAR` | `SALARY_SLIP` | `FORM_16` | `BANK_STMT` | `PROPERTY` | `UNKNOWN` |
+### Asymmetric Prototype Cost Matrix
+
+$$\text{PAN} = \text{PAN\_CARD}, \quad \text{SALARY} = \text{SALARY\_SLIP}, \quad \text{BANK} = \text{BANK\_STMT}$$
+
+| Truth \ Pred | `PAN` | `AADHAAR` | `SALARY` | `FORM_16` | `BANK` | `PROPERTY` | `UNKNOWN` |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **`BANK_STMT`** | 0 | 8 | 10 | 6 | 0 | 8 | 2 |
-| **`PAN_CARD`** | 0 | 4 | 8 | 6 | 8 | 8 | 2 |
+| **`BANK`** | 8 | 8 | 10 | 6 | 0 | 8 | 2 |
+| **`PAN`** | 0 | 4 | 8 | 6 | 8 | 8 | 2 |
 | **`AADHAAR`** | 4 | 0 | 8 | 6 | 8 | 8 | 2 |
-| **`SALARY_SLIP`** | 8 | 8 | 0 | 3 | 10 | 8 | 2 |
+| **`SALARY`** | 8 | 8 | 0 | 3 | 10 | 8 | 2 |
 | **`PROPERTY`** | 8 | 8 | 8 | 8 | 8 | 0 | 3 |
 
-$$\text{Cost-Weighted Error} = \frac{1}{N} \sum \text{Cost}[\text{Actual}][\text{Predicted}]$$
-- **Why Chosen:** Misclassifying a Bank Statement as a Salary Slip carries maximum penalty (10.0) because it risks poisoning the borrower's income and debt calculations. Conversely, classifying an ambiguous scan as `UNKNOWN` carries minimal cost (2.0) because it safely triggers human review.
+$$\text{Cost-weighted error} = \frac{\sum \text{cost}[\text{truth}][\text{prediction}]}{\text{total documents}}$$
+
+- **Without a reviewer:** `UNKNOWN` used to be cheap because a human picked it up. It now triggers `REQUEST_RESUBMISSION`, so it stays cheap but costs the borrower a delay. Every other misclassification is uncaught, so the high costs describe real exposure. 
+- *Note:* The matrix has rows for `BANK`, `PAN`, `AADHAAR`, `SALARY` and `PROPERTY` as true classes and no `ITR` column; add rows for `FORM_16`, `ITR` and `UNKNOWN` and an `ITR` column before treating cost-weighted error as complete.
+- *Important: The cost matrix is configurable and represents an engineering evaluation choice, not an official regulatory cost schedule.*
 
 ---
 
-## 4. Field-Level Extraction & OCR Metrics
+## 4. Extraction & Validation Metrics
 
-Field-level metrics measure how accurately OCR and Pydantic extractors pull granular values from raw layouts.
+Extraction metrics evaluate whether granular fields and ledgers are extracted verbatim with full source provenance. A failed check now selects an automated action instead of waiting for a person.
 
-### 4.1 Character Error Rate (CER) and Word Error Rate (WER)
-$$\text{CER} = \frac{\text{LevenshteinDistance}(\text{Ref}_{\text{chars}}, \text{Pred}_{\text{chars}})}{N_{\text{ref\_chars}}}, \quad \text{WER} = \frac{\text{LevenshteinDistance}(\text{Ref}_{\text{words}}, \text{Pred}_{\text{words}})}{N_{\text{ref\_words}}}$$
-- **Significance:** Measures raw text extraction fidelity from scanned or digital PDFs.
-- **Why Chosen:** Low-quality scans or noise degrade field parsers. Tracking CER helps isolate whether an extraction failure was caused by OCR degradation or regex/parser logic.
-
-### 4.2 Exact Match (EM) and Token F1 Score
-- **Exact Match (EM):** Binary 1.0/0.0 score indicating whether the normalized extracted string matches the ground truth verbatim.
-- **Token F1 Score:** Harmonic mean of precision and recall computed over bag-of-words tokens.
-- **Why Chosen:** Exact Match is essential for discrete identifiers (PAN: `ABCPS1234F`, Aadhaar: `XXXX-XXXX-8921`, IFSC: `HDFC0001234`), while Token F1 accommodates minor word permutations in complex multi-word strings (e.g., Employer: `"Tata Consultancy Services Limited"` vs. `"Tata Consultancy Services Ltd"`).
-
-### 4.3 Numeric Value Accuracy (Tolerance $\le \text{₹1.00}$)
-$$\text{Numeric Accuracy} = \mathbb{I}(|\text{Value}_{\text{pred}} - \text{Value}_{\text{gt}}| \le \text{₹1.00})$$
-- **Significance:** Verifies exact financial quantification for Gross Pay, Net Pay, PF, TDS, Bank Balance, and Consideration Value.
-- **Why Chosen:** Mortgage debt-to-income (FOIR) and loan-to-value (LTV) ratios depend on exact rupees. Approximations or missing zeros are unacceptable.
-
-### 4.4 Field Provenance Coverage & Precision
-$$\text{Provenance Coverage} = \frac{\text{Extracted Fields with Valid (Doc, Page, Snippet) Provenance}}{\text{Total Extracted Fields}}$$
-- **Significance:** Verifies that every extracted field links back to an exact source snippet and page number.
-- **Why Chosen:** Essential for regulatory compliance, auditability, and explainable Human-in-the-Loop review. Underwriters must be able to click and verify every number in seconds.
+| Metric | Definition | Why chosen | Automated action on failure |
+| :--- | :--- | :--- | :--- |
+| **Character and word error rate (CER, WER)** | Levenshtein distance to the reference ÷ reference length. | Separates OCR degradation from downstream parsing rules. | Feeds the low-confidence recovery passes. |
+| **Exact match (EM)** | 1.0 if the normalized value equals the label, else 0.0. | Required for discrete identifiers such as PAN (`ABCPS1234F`) and IFSC (`HDFC0001234`). | A failed format check lowers confidence and triggers re-extraction. |
+| **Token F1** | Token overlap between predicted and labeled value. | Tolerates variants such as "Limited" versus "Ltd" in employer names. | None; used for scoring only. |
+| **Salary ledger reconciliation** | $\lvert\text{Gross} - (\text{Net} + \text{Deductions})\rvert \le \text{₹2.00}$ (rupees assumed). | Forged payslips often fail simple arithmetic; deterministic checks trap fraud before credit scoring. | Payslip excluded from income; `REQUEST_RESUBMISSION`. |
+| **Provenance coverage** | Extracted fields with a valid (Doc, Page, Snippet) ÷ all extracted fields. | Keeps every value traceable for audit and for downstream agents. Target 100%. | A field without provenance is re-extracted or dropped, never passed on. |
 
 ---
 
-## 5. Validation & Ledger Arithmetic Metrics
+## 5. Cross-Document Reconciliation Metrics
 
-Validation metrics measure the agent's ability to verify domain constraints and ledger mathematics.
+Reconciliation metrics evaluate whether the agent cross-examines data across independent documents. Contradiction recall is the most safety-critical metric and matters more now: a contradiction the agent misses goes straight to the credit agent with no one to stop it.
 
-### 5.1 Deterministic Rule Pass Rate & False Rejection Rate
-- Evaluates PAN format regex (`^[A-Z]{3}[PCHFATBLJG][A-Z]\d{4}[A-Z]$`), 4th-character individual 'P' check, Aadhaar 12-digit masking, and bank IFSC formatting.
-- **Why Chosen:** Indian regulatory compliance requires hard verification of statutory identity documents before credit appraisal.
+- **Name and income reconciliation accuracy:** Names are matched fuzzily across KYC, salary slips and bank statements; monthly net salary is reconciled against detected bank credits within $\pm 5\%$ tolerance.
+- **Contradiction detection recall:** $\text{True contradictions detected} \div \text{total actual contradictions}$. Target benchmark is **$98.0\%$ or higher**.
+- **Contradiction precision:** $\text{Real contradictions} \div \text{contradictions flagged}$. A false flag sends a resubmission request to a borrower with a clean file.
+- **Contradiction handling accuracy (new):** $\text{Detected contradictions where automated action matches expected one} \div \text{all detected contradictions}$.
 
-### 5.2 Salary Ledger Arithmetic Reconciliation Rate
-$$\text{Ledger Accuracy} = \mathbb{I}(|\text{Gross Salary} - (\text{Net Pay} + \text{Total Deductions})| \le \text{₹2.00})$$
-- **Significance:** Validates internal ledger consistency on salary slips.
-- **Why Chosen:** Fabricated or forged payslips frequently contain arithmetic mismatches between gross earnings and net take-home pay. This metric validates arithmetic integrity before data flows downstream.
+> **Small-Sample Note:** The benchmark has at most about 15 contradiction cases (8 name, 7 income variance). A perfect recall score on that few cases is still consistent with a true miss rate of up to about 20% (rule of three: $3 \div n$), so read 100% on this dataset as a floor, not proof.
 
 ---
 
-## 6. Cross-Document Reconciliation Metrics
+## 6. Calibration Metrics
 
-Reconciliation metrics evaluate the agent's ability to cross-verify data across separate documents.
+Calibration asks whether the confidence score means what it claims. A confidence of 0.90 should correspond to roughly a 90% probability of extraction correctness. Confidence of 0.85 or above is the condition for `PROCEED` and is now the only gate between an extraction error and the downstream agents.
 
-### 6.1 Name Resolution F1 Score
-Evaluates token-based fuzzy string matching across PAN, Aadhaar, Salary Slips, Bank Statements, and Property Deeds against ground-truth name equivalence.
-- **Significance:** Indian loan applications frequently feature initials and name sequence variants (e.g., `"Priya Suresh Patel"` vs `"Priya S. Patel"`).
-- **Why Chosen:** Distinguishes genuine alias variations (acceptable with high fuzzy score) from outright identity mismatches (which must be blocked).
+- **What counts as correct:** The baseline appears to score correctness at the level of the case outcome. Define it explicitly: **a case is correct when its automated outcome equals the expected outcome and every field used downstream is within tolerance of its label.**
+- **Brier score:** $\text{Mean squared error between confidence and correctness (1 correct, 0 incorrect)}$. Lower is better.
+- **Expected Calibration Error (ECE):** $\sum (|B_m| \div N) \times |\text{acc}(B_m) - \text{conf}(B_m)|$ across 5 confidence bins. 0 is perfect calibration.
+- **Gate-passing error rate (new):** Cases that are not correct and have confidence of 0.85 or above $\div$ all cases with confidence of 0.85 or above. This is the rate at which errors get through the gate unseen.
 
-### 6.2 Income vs. Bank Credit Reconciliation Accuracy
-Verifies monthly net salary on payslips against monthly credit transactions in bank statements within $\pm 5\%$ tolerance.
-- **Significance:** Detects undeclared salary deductions, exaggerated payslips, or payroll delays.
-- **Why Chosen:** Comparing declared income against actual deposited cash flow is the most critical fraud-prevention step in mortgage underwriting.
+### Reliability Bins Diagnostic
 
-### 6.3 Contradiction Detection Recall (Safety-Critical Recall)
-$$\text{Contradiction Recall} = \frac{\text{True Contradictions Detected}}{\text{Total Actual Contradictions in Dataset}}$$
-- **Significance:** Measures the percentage of true document conflicts (name mismatches, salary discrepancies, missing mandatory docs) caught by the agent.
-- **Why Chosen:** **This is the single most critical safety metric for Document Ingestion.** A false negative (missing a contradiction) lets corrupted or fraudulent data poison the Credit and Decision agents. Target is $\ge 98.0\%$.
+| Confidence interval | Case count | Mean confidence | Actual accuracy | Calibration gap |
+| :---: | :---: | :---: | :---: | :---: |
+| 0.00 – 0.20 | 0 | 0.1000 | 0.0000 | 0.0000 |
+| 0.20 – 0.40 | 0 | 0.3000 | 0.0000 | 0.0000 |
+| 0.40 – 0.60 | 0 | 0.5000 | 0.0000 | 0.0000 |
+| 0.60 – 0.80 | 12 | 0.6973 | 1.0000 | 0.3027 |
+| 0.80 – 1.00 | 28 | 0.9142 | 1.0000 | 0.0858 |
 
----
-
-## 7. Confidence Calibration Metrics
-
-Confidence calibration measures whether the agent's composite confidence score ($0.0 - 1.0$) reflects true extraction correctness.
-
-### 7.1 Brier Score
-$$\text{Brier Score} = \frac{1}{N} \sum_{i=1}^{N} (\text{Confidence}_i - \text{Correctness}_i)^2$$
-- Lower is better; 0.0 is perfect calibration.
-- **Why Chosen:** Penalizes overconfidence and rewards well-calibrated uncertainty.
-
-### 7.2 Expected Calibration Error (ECE)
-$$\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|$$
-- **Significance:** Measures the weighted gap between average confidence and observed accuracy across confidence bins.
-- **Why Chosen:** The Document Ingestion Agent uses $\text{Confidence} \ge 0.85$ as the gateway for automated straight-through processing. ECE tests whether predictions rated $\ge 0.85$ confidence actually achieve $\ge 85-90\%$ accuracy.
-
-### 7.3 Reliability Bins
-Reports sample count, mean confidence, actual accuracy, and calibration gap across 5 confidence intervals ($[0.0-0.2], [0.2-0.4], [0.4-0.6], [0.6-0.8], [0.8-1.0]$).
-- **Why Chosen:** Visual diagnostic revealing whether overconfidence or underconfidence occurs in specific operational regimes.
+- **Under-confident, not over-confident:** All 12 cases in the 0.60–0.80 bin fall below the 0.85 threshold and were correct; they now enter recovery or a resubmission request, which is avoidable friction.
+- **ECE needs a re-run:** Weighting the two populated gaps by case count gives $0.3 \times 0.3027 + 0.7 \times 0.0858 \approx 0.151$, while the baseline reports 0.1489. At 0.151 the 0.150 target is just missed.
+- **Gate failures are invisible:** Every populated bin has 100% accuracy, so the table cannot show whether a high-confidence extraction is ever wrong. Add wrongly extracted cases to the benchmark.
+- **Proposed:** Tighten the ECE target to 0.050 and the gate-passing error rate to 0; recalibrate confidence (for example isotonic regression or Platt scaling) on a larger held-out set and choose the 0.85 threshold from that data.
+- **Proposed:** Gate on the lowest confidence among decision-critical fields (name, PAN, net salary, bank credits, property value) as well as the overall score, so one weak field cannot be averaged away.
 
 ---
 
-## 8. Runtime & Operational Metrics
+## 7. Automated Outcomes & Safety Metrics
 
-Operational metrics require no ground-truth labels and are computed from live audit logs to monitor system health in production:
+These replace the straight-through-processing and HITL escalation metrics. Each safety gate maps to an automated action; no gate suspends a case for human review.
 
-| Metric | Definition / Significance | Why Chosen |
+### Safety Gate Mapping
+
+| Trigger | Automated action | Resulting outcome |
 | :--- | :--- | :--- |
-| `straight_through_processing_rate` | $\text{STP Rate} = 1 - \text{hitl\_escalation\_rate}$ | Measures automation efficiency and turnaround speed. |
-| `hitl_escalation_rate` | $\text{Cases Routed to HITL} \div \text{Total Cases}$ | Measures human underwriter review workload. |
-| `mean_confidence` | Average confidence across all processed applications. | Monitors evidence quality across loan batches. |
-| `below_threshold_rate` | Share of applications with confidence $< 0.85$. | Shows how often the low-confidence safety gate fires. |
-| `safety_gate_triggers` | Counts per gate (Missing Docs, Name Mismatch, Salary Variance, Math Error). | Pinpoints the primary cause of operational exceptions. |
-| `provenance_completeness` | Rate of fields with verified source bounding snippets. | Ensures 100% auditability across production applications. |
+| `missing_mandatory_docs` | Send the borrower the list of missing document types and park the case on a timer; no agent can create a missing document. | `REQUEST_RESUBMISSION`, then `CLOSE_UNRESOLVED` on timeout or after the maximum attempts. |
+| `salary_discrepancy` (net salary vs bank credits outside $\pm 5\%$) | Re-extract both figures once; if the gap remains, use the lower of payslip net salary and the average of detected salary credits over the same months. | `PROCEED_CONSERVATIVE`; above the salary variance limit, `REQUEST_RESUBMISSION`. |
+| `name_contradiction` | Re-match using deterministic normalization only (initials, name order, transliteration); the similarity threshold is never lowered. | `PROCEED` if resolved; otherwise `REQUEST_RESUBMISSION`, then `CLOSE_UNRESOLVED`. |
+| `unmasked_aadhaar` | Redact the first 8 digits before any extracted value, provenance snippet or log entry is written, so the full number is never stored. | `PROCEED`, if no other trigger fired. |
+| `Ledger arithmetic mismatch` | Treat the payslip as unreliable, exclude it from income and request a replacement. | `REQUEST_RESUBMISSION`. |
+| `Confidence below the threshold` (including low-quality scans) | At most two recovery passes: image preprocessing and re-extraction, then a second independent extractor compared field by field; confidence is recomputed after each. | `PROCEED` if confidence recovers to 0.85; otherwise `REQUEST_RESUBMISSION` for a rescan. |
+
+### Configuration Parameters
+
+| Parameter | Used for | Value |
+| :--- | :--- | :--- |
+| **Confidence threshold** | Condition for `PROCEED` | `0.85` (source) |
+| **Income reconciliation tolerance** | Net salary versus bank credits | `±5%` (source) |
+| **Ledger tolerance** | Gross versus Net + Deductions | `±2.00`, rupees assumed (source) |
+| **Recovery passes per case** | Low-confidence recovery | `2` (preprocessing, second extractor) |
+| **Salary variance limit** | `PROCEED_CONSERVATIVE` vs `REQUEST_RESUBMISSION` | *To be set; not defined in the source* |
+| **Resubmission timeout** | Pending case to `CLOSE_UNRESOLVED` | *To be set; not defined in the source* |
+| **Maximum resubmission attempts** | Guarantees every case terminates | *To be set; not defined in the source* |
+| **Circuit-breaker limits** | Allowed drift from the rolling baseline (section 10) | *To be set; not defined in the source* |
+
+*Cases that depend on a value marked "To be set" cannot be scored until it is fixed.*
+
+### Automated Outcomes Metrics Suite
+
+| Metric | Definition | Proposed target |
+| :--- | :--- | :--- |
+| `automation_rate` | Cases that reach an outcome (including `REQUEST_RESUBMISSION`) with no human touch ÷ all cases. | 100% |
+| `stuck_case_rate` | Cases with no outcome, or pending past the timeout ÷ all cases. | 0 |
+| `disposition_accuracy` | Cases whose outcome equals the expected outcome ÷ all cases. | 0.95 or higher |
+| `false_accept_rate` | Cases whose outcome is less conservative than expected ÷ cases whose expected outcome is more conservative than `PROCEED`. | 0 on the benchmark |
+| `false_reject_rate` | Cases whose outcome is more conservative than expected ÷ cases whose expected outcome is less conservative than `CLOSE_UNRESOLVED`. | Track the trend |
+| `edge_case_containment` | Edge cases whose outcome is at least as conservative as expected ÷ edge cases (25 in the benchmark). | 25 of 25 |
+| `conservative_value_error` | `PROCEED_CONSERVATIVE` cases where the value used exceeds the verified value ÷ `PROCEED_CONSERVATIVE` cases. | 0 |
+| `recovery_rate` | Cases reaching `PROCEED` after recovery ÷ cases entering it. | Track the trend |
+| `resubmission_resolution_rate` | Resubmission requests answered and resolved before timeout ÷ requests sent. | Track the trend |
+| `auto_proceed_rate` | Cases ending `PROCEED` ÷ all cases; replaces `stp_rate`. | Informational |
+
+- **Scoring notes:** False accepts and false rejects are scored on the conservativeness order in section 1. A metric whose denominator is empty is reported as `n/a`, not as 0 or 1.
+- **Unchanged and label-free:** `gate_trigger_counts`, `mean_confidence`, `below_threshold_rate` and `provenance_coverage`; `below_threshold_rate` now measures how often recovery starts.
+- **Retired:** `stp_rate` and `hitl_escalation_rate`.
+- On the benchmark the expected `auto_proceed_rate` is the share of cases labeled `PROCEED`: at least 15 of 40 (37.5%), more if recoverable scans and spelling variants are labeled `PROCEED`. Do not push it up at the expense of `false_accept_rate`.
 
 ---
 
-## 9. Baseline Results on the Benchmark Dataset
+## 8. Current Baseline and Targets
 
-Below are the empirical baseline results on the 40-case Indian mortgage evaluation dataset:
+Correctness baselines carry over from the original benchmark. The new metrics have no baseline until the automated flow is built and run, and recovery and recalibration may shift the extraction and calibration numbers, so re-run all of them after the change.
 
-| Evaluation Metric | Baseline Value | Target Benchmark | Status |
-| :--- | :---: | :---: | :---: |
-| **Document Classification Accuracy** | **99.38%** | $\ge 95.0\%$ | Passed |
-| **Balanced Classification Accuracy** | **99.56%** | $\ge 95.0\%$ | Passed |
-| **Asymmetric Cost-Weighted Error** | **0.0124** | $\le 0.150$ | Passed |
-| **Field Extraction Exact Match (EM)** | **97.70%** | $\ge 92.0\%$ | Passed |
-| **Field Extraction Token F1 Score** | **98.78%** | $\ge 95.0\%$ | Passed |
-| **OCR Character Error Rate (CER)** | **1.42%** | $\le 3.0\%$ | Passed |
-| **Field Provenance Coverage** | **100.00%** | $100.0\%$ | Passed |
-| **Contradiction Detection Recall (Safety)** | **100.00%** | $\ge 98.0\%$ | Passed |
-| **Contradiction Precision** | **100.00%** | $\ge 90.0\%$ | Passed |
-| **Name Resolution Accuracy** | **100.00%** | $\ge 95.0\%$ | Passed |
-| **Brier Calibration Score** | **0.0346** | $\le 0.100$ | Passed |
-| **Expected Calibration Error (ECE)** | **0.1489** | $\le 0.150$ | Passed |
-| **Straight-Through Processing (STP) Rate** | **37.50%** | Baseline Mix | Normal |
-| **HITL Review Escalation Rate** | **62.50%** | Safety Guardrail | Normal |
+| Evaluation Metric | Baseline Value | Target Benchmark | Note |
+| :--- | :---: | :---: | :--- |
+| **Document Classification Accuracy** | 0.9938 (99.38%) | 0.950 or higher | Unchanged |
+| **Classification Balanced Accuracy** | 0.9956 (99.56%) | 0.950 or higher | Unchanged |
+| **Asymmetric Cost-Weighted Error** | 0.0124 | 0.150 or lower | Cost matrix incomplete |
+| **Field Extraction Exact Match (EM)** | 0.9770 (97.70%) | 0.920 or higher | Unchanged |
+| **Field Extraction Token F1 Score** | 0.9878 (98.78%) | 0.950 or higher | Unchanged |
+| **OCR Character Error Rate (CER)** | 0.0142 (1.42%) | 0.030 or lower | Unchanged |
+| **Contradiction Detection Recall (Safety)** | 1.0000 (100.00%) | 0.980 or higher | Too few cases to certify |
+| **Contradiction Precision** | 1.0000 (100.00%) | 0.900 or higher | Unchanged |
+| **Brier Score** | 0.0346 | 0.100 or lower | Unchanged |
+| **Expected Calibration Error (ECE)** | 0.1489 reported; ~0.151 from bins | 0.150 or lower; proposed 0.050 | Re-run |
+| **Straight-Through Processing (STP) Rate** | 0.3750 (37.50%) | None | **Retired** |
+| **HITL Escalation Rate** | 0.6250 (62.50%) | None | **Retired** |
+| **Automation Rate** | Not yet measured | 100% | **New** |
+| **Stuck-Case Rate** | Not yet measured | 0 | **New** |
+| **Disposition Accuracy** | Not yet measured | 0.95 or higher (proposed) | **New** |
+| **Edge-Case Containment** | Not yet measured | 25 of 25 | **New** |
+| **False-Accept Rate** | Not yet measured | 0 | **New** |
+| **Gate-Passing Error Rate** | Not yet measured | 0 | **New** |
 
----
-
-## 10. Why This Metric Set Was Chosen
-
-1. **Downstream Safety First:** A failure in Document Ingestion poisons all downstream calculations (DTI, FOIR, LTV). High Contradiction Recall ($100\%$) and asymmetric cost weighting protect the Credit and Decision agents from false data.
-2. **Explainability & Provenance:** By requiring 100% Provenance Coverage, every number displayed to human underwriters is traceable to its source document page and snippet.
-3. **Calibrated Trust in Automation:** Brier and ECE scores verify that the $0.85$ confidence threshold is mathematically trustworthy for straight-through processing.
-4. **Class & Document Fairness:** Balanced accuracy ensures that less frequent documents (e.g., Form 16 Part B, Property Deeds) perform with the same high rigor as salary slips.
+*These values are baseline results for the shipped benchmark dataset and should be interpreted as an engineering benchmark.*
 
 ---
 
-## 11. Implementation & Reproducibility
+## 9. Why This Metric Set Was Chosen
 
-The complete evaluation suite can be reproduced directly using the project evaluation CLI:
+- **Safety:** Contradiction recall, false-accept rate, confusion matrices, and cost-weighted error emphasize the asymmetric harm of corrupted borrower financials.
+- **Class fairness:** Balanced accuracy and macro metrics prevent payslip-heavy document distributions from hiding weak classification on rare deeds.
+- **Extraction fidelity:** Exact Match, Token F1, and CER test whether granular entities and financial figures are extracted without distortion.
+- **Trust in automation:** Brier, ECE, reliability bins, and the gate-passing error rate test whether confidence is reliable enough to be the only gate for `PROCEED`.
+- **Automation health:** Automation rate, stuck-case rate, disposition accuracy, and recovery and resubmission rates show whether the agent resolves cases correctly on its own.
+- **Auditability:** Provenance coverage guarantees full source verification rather than treating the LLM/OCR as an unverifiable authority.
 
+---
+
+## 10. Risks and Safeguards
+
+The current benchmark cannot show that an unattended agent is safe; it can only show that nothing has failed yet.
+
+- **Too few cases:** The baseline figures are consistent with 161 documents and a single error that cost 2 ($160 \div 161 = 0.9938$; $2 \div 161 = 0.0124$), so one document moves accuracy by about 0.6 points. With at most about 15 contradiction cases and no wrongly extracted cases, perfect scores say little about the true error rate. Grow the benchmark with adversarial and wrongly extracted cases and add historical underwritten outcomes.
+- **Digital tampering is now required, not future scope:** A forged document that is internally consistent passes every check in this report, and no reviewer would see the splice. Quantify precision and recall on image splicing, font inconsistencies, and PDF metadata modifications.
+- **Loosened matching:** An automated re-match can "resolve" a genuine conflict by relaxing the matcher. Limit it to deterministic normalizations and never lower the similarity threshold.
+- **Sensitive data:** Unmasked Aadhaar numbers must be redacted before they reach provenance snippets, logs or the audit trail, not only in the final stored copy.
+- **Downstream inheritance:** Credit and decision agents now receive data no person has looked at. Each `PROCEED_CONSERVATIVE` case must carry its flag forward, and a flagged value is treated as unverified.
+- **Accountability:** The source describes this component as decision-support inside a human-in-the-loop architecture. Confirm with compliance that unattended operation is acceptable under the lender's own policy and the applicable RBI requirements before going live.
+
+### Safeguards that do not block a case
+- **Circuit breaker:** When `below_threshold_rate`, `gate_trigger_counts` or the resubmission rate drifts past its limit, stops issuing `PROCEED`, holds new cases in an automatic retry queue without contacting borrowers, and alerts engineering about the system (not about individual cases).
+- **Full provenance and audit trail:** Recorded for every decision.
+- **Optional after-the-fact sampling:** Sampling of auto-processed cases, which nothing waits on and whose results become production labels. The agent is fully automated without the sampling.
+
+---
+
+## 11. Future Evaluation Scope
+
+- **Multilingual KYC extraction:** Benchmark performance across Hindi, Tamil, Telugu, and Marathi regional identity documents.
+- **Per-segment slicing:** Evaluate performance by employer tier, income band, scan resolution, and bank statement format.
+- **Latency and cost:** Tokens, wall-clock time, and OCR compute cost per multi-page document bundle, including the cost of recovery passes.
+- **Resubmission simulation:** Replay borrower replies so the benchmark can score final outcomes as well as first-pass outcomes.
+
+---
+
+## 12. Implementation, Reproducibility & Governance Note
+
+The existing commands still reproduce the baseline:
 ```bash
-# Run benchmark evaluation across all 40 labeled cases
 python -m src.evaluation.eval_cli
-
-# Save detailed JSON evaluation report
 python -m src.evaluation.eval_cli --output evaluation_report.json
-
-# Run unit tests
 python -m pytest tests/ -v
 ```
 
----
+The evaluation CLI described in the source reports the retired HITL metrics. The new metrics in section 7 need to be added to it, and the expected-outcome labels from section 2 added to the dataset. The agent's gate logic also has to change to implement the automated actions; this report specifies the metrics and does not change the code.
 
-## 12. Scope & Governance Note
-
-The **Document Ingestion Agent** is an evidentiary extraction and reconciliation component within a human-in-the-loop home loan underwriting system. It performs factual extraction and validation; it does not evaluate creditworthiness or make loan approval decisions. Prototype weights, tolerance thresholds ($\pm 5\%$), and cost matrices are engineering evaluation choices designed to ensure robustness, compliance, and safety.
+The Document Ingestion Agent remains an evidentiary extraction and reconciliation component, but in this version it acts without a reviewer. The $\pm 5\%$ tolerance, the salary variance limit, the cost matrix and every target marked as proposed are engineering choices; they should not be represented as official RBI rules or regulatory requirements.
