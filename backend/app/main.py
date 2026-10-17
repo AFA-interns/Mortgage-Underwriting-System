@@ -655,13 +655,17 @@ AGENT_METRICS_STATUS: list[dict[str, Any]] = [
     {
         "agent": "property",
         "label": "Property Valuation Agent",
-        "status": "unavailable",
+        "status": "runnable",
         "description": (
-            "No evaluation framework exists yet for this agent - there is no "
-            "ground-truth sale price dataset to score the valuation against."
+            "PROPERTY_VALUATION_METRICS.md Coverage Rate (share of stored "
+            "applications for which a valuation was actually produced, "
+            "broken down by source: AVnester / scraped DB / local median) "
+            "computed live - no ground truth needed. PPE10/PPE20/MdAPE stay "
+            "unavailable: they need each property's actual transaction "
+            "price, which this system does not capture anywhere yet."
         ),
-        "endpoint": None,
-        "method": None,
+        "endpoint": "/api/v1/metrics/property",
+        "method": "POST",
     },
     {
         "agent": "compliance",
@@ -703,3 +707,13 @@ async def credit_metrics() -> dict[str, Any]:
     from app.credit.benchmark import run_phase1_report
 
     return run_phase1_report()
+
+
+@app.post("/api/v1/metrics/property")
+async def property_valuation_metrics() -> dict[str, Any]:
+    """PROPERTY_VALUATION_METRICS.md Coverage Rate, computed live from
+    every application this server currently has stored.
+    """
+    from app.property_valuation.benchmark import run_coverage_report
+
+    return run_coverage_report()

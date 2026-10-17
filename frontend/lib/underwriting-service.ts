@@ -207,6 +207,28 @@ export type CreditPhase1Report = {
   }
 }
 
+// PROPERTY_VALUATION_METRICS.md - Coverage Rate is runnable now (no ground
+// truth needed); PPE10/PPE20/MdAPE need each property's actual transaction
+// price, which this system doesn't capture, so `accuracy.available` is
+// always false today.
+export type PropertyCoverageReport = {
+  available: boolean
+  reason?: string
+  total_applications?: number
+  valuations_produced?: number
+  coverage_rate_pct?: number
+  by_source?: Record<string, number>
+  no_valuation_count?: number
+  accuracy?: {
+    available: boolean
+    reason?: string
+    n?: number
+    ppe10?: { threshold_pct: number; n: number; successes: number; rate_pct: number }
+    ppe20?: { threshold_pct: number; n: number; successes: number; rate_pct: number }
+    mdape?: { n: number; mdape_pct: number | null }
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
   if (!res.ok) {
@@ -253,6 +275,8 @@ export const underwritingService = {
   getDecisionRuntimeMetrics: () => request<DecisionRuntimeMetrics>('/evaluation/runtime'),
   /** CREDIT_METRICS.md Phase 1 report, computed live from every stored application - no outcome labels needed. */
   runCreditMetrics: () => request<CreditPhase1Report>('/api/v1/metrics/credit', { method: 'POST' }),
+  /** PROPERTY_VALUATION_METRICS.md Coverage Rate, computed live from every stored application. */
+  runPropertyMetrics: () => request<PropertyCoverageReport>('/api/v1/metrics/property', { method: 'POST' }),
 }
 
 export const documentUrl = (applicationId: string, docId: string): string =>

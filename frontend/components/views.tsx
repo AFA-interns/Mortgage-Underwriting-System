@@ -10,7 +10,7 @@ import {
   documentUrl, formatInr, formatPct, formatSize, humanizeField, underwritingService,
   type AgentMetricsStatus, type ApplicationView, type CreditPhase1Report, type DemoScenario,
   type DecisionRuntimeMetrics, type DocumentIngestionMetricsReport, type ParsedDocument,
-  type ReviewItem, type Stage, type VersionHistoryEntry,
+  type PropertyCoverageReport, type ReviewItem, type Stage, type VersionHistoryEntry,
 } from '@/lib/underwriting-service'
 import { getDashboardMetrics } from '@/lib/dashboard-service'
 import { KeyValues, MetricBar, StatCard, StatusPill, stageTone, statusTone } from '@/components/ui-bits'
@@ -942,12 +942,40 @@ function CreditMetricsPanel({ report }: { report: CreditPhase1Report }) {
   )
 }
 
+function PropertyMetricsPanel({ report }: { report: PropertyCoverageReport }) {
+  if (!report.available) {
+    return <div className="panel empty-state"><Home size={22} /><strong>Nothing to measure yet</strong><span>{report.reason}</span></div>
+  }
+  const bySource = report.by_source ?? {}
+  return (
+    <div className="metrics-report">
+      <div className="stats-grid metrics-stats-grid">
+        <StatCard label="Applications measured" value={String(report.total_applications)} detail="Property valuation attempts" icon={FileCheck2} tone="blue" />
+        <StatCard label="Coverage rate" value={formatPct((report.coverage_rate_pct ?? 0) / 100)} detail={`${report.valuations_produced} of ${report.total_applications} produced a valuation`} icon={Home} tone={(report.coverage_rate_pct ?? 0) >= 80 ? 'green' : 'amber'} />
+        <StatCard label="No valuation" value={String(report.no_valuation_count)} detail="AVnester, scraped DB and local median all came up empty" icon={AlertCircle} tone={report.no_valuation_count ? 'amber' : 'green'} />
+      </div>
+      <div className="panel metrics-subpanel">
+        <h4>Valuation source (of coverage)</h4>
+        {Object.keys(bySource).length === 0
+          ? <span className="muted">No valuations produced yet.</span>
+          : <KeyValues rows={Object.entries(bySource).map(([k, v]) => [k.replace(/_/g, ' '), String(v)])} />}
+      </div>
+      {report.accuracy && !report.accuracy.available && (
+        <div className="panel empty-state small" style={{ marginTop: 16 }}>
+          <AlertCircle size={20} /><strong>PPE10 / PPE20 / MdAPE not available</strong><span>{report.accuracy.reason}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [docReport, setDocReport] = useState<DocumentIngestionMetricsReport | null>(null)
   const [decisionReport, setDecisionReport] = useState<DecisionRuntimeMetrics | null>(null)
   const [creditReport, setCreditReport] = useState<CreditPhase1Report | null>(null)
+  const [propertyReport, setPropertyReport] = useState<PropertyCoverageReport | null>(null)
   const meta = METRICS_AGENT_ICONS[status.agent] ?? { icon: Activity, tone: 'blue' }
 
   const run = async () => {
@@ -956,6 +984,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
       if (status.agent === 'document_ingestion') setDocReport(await underwritingService.runDocumentIngestionMetrics())
       else if (status.agent === 'decision') setDecisionReport(await underwritingService.getDecisionRuntimeMetrics())
       else if (status.agent === 'credit') setCreditReport(await underwritingService.runCreditMetrics())
+      else if (status.agent === 'property') setPropertyReport(await underwritingService.runPropertyMetrics())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not run this benchmark.')
     } finally {
@@ -963,7 +992,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
     }
   }
 
-  const hasResult = docReport || decisionReport || creditReport
+  const hasResult = docReport || decisionReport || creditReport || propertyReport
 
   return (
     <article className="panel metrics-agent-card" data-testid={`metrics-${status.agent}`}>
@@ -983,6 +1012,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
       {docReport && <DocumentIngestionMetricsPanel report={docReport} />}
       {decisionReport && <DecisionMetricsPanel report={decisionReport} />}
       {creditReport && <CreditMetricsPanel report={creditReport} />}
+      {propertyReport && <PropertyMetricsPanel report={propertyReport} />}
     </article>
   )
 }
