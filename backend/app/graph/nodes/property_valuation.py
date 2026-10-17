@@ -138,14 +138,26 @@ def property_valuation_node(
     # ---------------------------------------------------------
     # AVNESTER LIVE LISTINGS (comparables + estimate)
     # ---------------------------------------------------------
+    # Demo scenarios set skip_live_valuation so their outcome doesn't hinge
+    # on AVnester's live, rate-limited, moment-to-moment valuation - but
+    # only where the deterministic scraped DB actually has coverage for
+    # this property (comp_value > 0); if it doesn't (e.g. a locality that
+    # was never seeded), fall through to AVnester exactly as a real
+    # application would, rather than silently producing no valuation.
 
-    api_val = fetch_api_valuation(
-        locality=locality,
-        city=city,
-        property_type=property_type,
-        bhk=bhk,
-        area_sqft=area_sqft,
-    )
+    if state.get("skip_live_valuation") and comp_value > 0:
+        api_val = {
+            "supported": False, "scope_message": None,
+            "comparables": [], "estimated_market_value_inr": 0,
+        }
+    else:
+        api_val = fetch_api_valuation(
+            locality=locality,
+            city=city,
+            property_type=property_type,
+            bhk=bhk,
+            area_sqft=area_sqft,
+        )
 
     comparables = api_val.get("comparables", [])
     api_est = api_val.get("estimated_market_value_inr", 0)
@@ -200,8 +212,11 @@ def property_valuation_node(
         price_per_sqft = db_price_per_sqft
         confidence_score = 0.70
         risk_flags.append(
-            "AVnester returned no usable listings; valuation uses the "
-            "scraped property comparables database instead."
+            "This demo run uses the deterministic scraped property "
+            "comparables database instead of live AVnester."
+            if state.get("skip_live_valuation")
+            else "AVnester returned no usable listings; valuation uses the "
+                 "scraped property comparables database instead."
         )
         explanation = (
             f"Property valuation estimated at Rs {estimated_value:,.0f} "

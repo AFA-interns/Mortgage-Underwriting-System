@@ -101,14 +101,18 @@ DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
         "profile": {
             "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
             "loan_amount": 5_000_000, "loan_tenure_months": 240,
-            # AVnester's live valuation for this demo's Thondamuthur/Coimbatore
-            # plot is ~Rs 99.18L (checked directly against the API), not the
-            # property deed's original Rs 75L sale price. Declaring a value
-            # this far from the live AVnester estimate was tripping the
-            # Decision Agent's own >20%-variance contradiction check
-            # (app.decision.contradiction_detector) AFTER the PAN fix, so the
-            # demo never reached APPROVE even once the PAN was corrected.
-            "property_value": 9_900_000, "existing_debt": 15000,
+            # Matches the property deed's own Rs 75L consideration amount.
+            # This used to intermittently SUSPEND post-PAN-fix because
+            # property valuation called live AVnester, whose valuation for
+            # this address swings as high as ~Rs 99L (a >20% gap that trips
+            # app.decision.contradiction_detector) depending on the moment
+            # it's called - not because this declared value was wrong. Fixed
+            # properly via `skip_live_valuation` (see run_application /
+            # property_valuation_node): demo runs now prefer the
+            # deterministic, project-seeded scraped comparables DB over live
+            # AVnester for this address, so the valuation this gets compared
+            # against no longer depends on AVnester's live state at all.
+            "property_value": 7_500_000, "existing_debt": 15000,
         },
         "bureau": _CLEAN_BUREAU,
     },
@@ -402,6 +406,7 @@ def run_application(
     field_overrides: dict[str, dict[str, Any]] | None = None,
     application_id: str | None = None,
     rerun_count: int = 0,
+    skip_live_valuation: bool | None = None,
 ) -> dict[str, Any]:
     """Runs the full pipeline (ingestion -> credit/property/compliance -> decision).
 
@@ -414,6 +419,11 @@ def run_application(
     instead of a new application appearing per correction. The prior run's
     stored documents are cleared first so they don't pile up under the
     same id; `rerun_count` records how many times that's happened.
+    `skip_live_valuation` defaults to `source.startswith("demo:")` when not
+    given explicitly - a rerun's own `source` is `"rerun:<id>"`, not
+    `"demo:..."`, so `rerun_application` passes it through explicitly based
+    on the *original* application's source, keeping a demo deterministic
+    across its whole correct-and-rerun lifecycle, not just its first run.
     """
     app_id = application_id or store.next_id()
     if application_id:
@@ -433,6 +443,13 @@ def run_application(
         "credit_bureau_data": resolved_bureau,
         "field_overrides": field_overrides or {},
         "errors": [],
+        # Demo scenarios should be reproducible - prefer the deterministic
+        # scraped comparables DB over live AVnester wherever it has
+        # coverage, instead of letting a demo's outcome hinge on a live,
+        # rate-limited third-party API's valuation at that exact moment.
+        "skip_live_valuation": (
+            skip_live_valuation if skip_live_valuation is not None else source.startswith("demo:")
+        ),
     }
 
     graph = build_underwriting_graph().compile()
@@ -601,6 +618,7 @@ def rerun_application(application_id: str) -> dict[str, Any]:
             field_overrides=overrides_by_path,
             application_id=application_id,
             rerun_count=rerun_count,
+            skip_live_valuation=str(original.get("source", "")).startswith("demo:"),
         )
 
         original_decision = original.get("decision") or {}

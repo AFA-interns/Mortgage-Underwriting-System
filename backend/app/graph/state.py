@@ -26,6 +26,14 @@ class UnderwritingState(TypedDict, total=False):
 
     credit_bureau_data: dict[str, Any]
 
+    # Demo-scenario runs set this so property valuation prefers the
+    # deterministic, project-seeded scraped comparables DB over the live
+    # AVnester API wherever it actually has coverage - see
+    # app.graph.nodes.property_valuation.property_valuation_node. Real
+    # (non-demo) applications leave this unset and use AVnester first, as
+    # before.
+    skip_live_valuation: bool
+
     validation_result: dict[str, Any]
     contradictions: list[dict[str, Any]]
     agent_comparison: dict[str, Any]
