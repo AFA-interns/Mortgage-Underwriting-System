@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
-  Activity, AlertCircle, ArrowLeft, ArrowRight, Check, Clock3, CreditCard, ExternalLink, FileCheck2,
-  FileText, GitBranch, Home, Inbox, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles,
-  UploadCloud, X, Zap, type LucideIcon,
+  Activity, AlertCircle, ArrowLeft, ArrowRight, BarChart3, Check, ChevronDown, Clock3, CreditCard,
+  ExternalLink, FileCheck2, FileText, GitBranch, Home, Inbox, Loader2, Pencil, Plus, RefreshCw,
+  ShieldCheck, Sparkles, UploadCloud, UsersRound, X, Zap, type LucideIcon,
 } from 'lucide-react'
 import {
   documentUrl, formatInr, formatPct, formatSize, humanizeField, underwritingService,
@@ -15,7 +15,7 @@ import {
 import { getDashboardMetrics } from '@/lib/dashboard-service'
 import { KeyValues, MetricBar, StatCard, StatusPill, stageTone, statusTone } from '@/components/ui-bits'
 
-export type View = 'dashboard' | 'applications' | 'new' | 'detail' | 'reports' | 'review' | 'final-report' | 'document-review' | 'metrics'
+export type View = 'dashboard' | 'applications' | 'new' | 'detail' | 'reports' | 'review' | 'final-report' | 'document-review' | 'metrics' | 'analytics' | 'borrowers' | 'documents'
 
 type Nav = { setView: (v: View) => void; open: (id: string) => void }
 
@@ -1006,6 +1006,200 @@ export function AgentMetrics({ setView }: { setView: (v: View) => void }) {
       </div>
       <div className="metrics-agent-grid">
         {statuses.map((s) => <AgentMetricCard key={s.agent} status={s} />)}
+      </div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------- analytics */
+// Deeper, portfolio-wide breakdowns computed from the same application list
+// the Dashboard already loads - no new backend calls, same as Dashboard's
+// own getDashboardMetrics().
+
+function counts<T extends string>(items: T[]): Record<string, number> {
+  return items.reduce((acc, v) => { acc[v] = (acc[v] ?? 0) + 1; return acc }, {} as Record<string, number>)
+}
+
+const STAGE_LABELS = ['Document Ingestion', 'Credit Analysis', 'Property Valuation', 'Compliance', 'Decision']
+
+export function Analytics({ apps, setView, open }: { apps: ApplicationView[] } & Nav) {
+  if (apps.length === 0) return <NoApplication setView={setView} title="No analytics yet" />
+
+  const decisionCounts = counts(apps.map((a) => a.decision?.decision ?? 'PENDING'))
+  const decisionTotal = apps.length
+
+  const stageAvgConfidence = STAGE_LABELS.map((label, i) => {
+    const values = apps.map((a) => a.stages?.[i]?.confidence).filter((v): v is number => typeof v === 'number')
+    const avg = values.length ? values.reduce((s, v) => s + v, 0) / values.length : null
+    return { label, avg }
+  })
+
+  const riskScores = apps.map((a) => Number(a.decision?.risk_score)).filter((v) => !isNaN(v))
+  const avgRisk = riskScores.length ? riskScores.reduce((s, v) => s + v, 0) / riskScores.length : null
+  const highRisk = riskScores.filter((v) => v < 60).length
+
+  const propertyTypeCounts = counts(apps.map((a) => a.property_type || 'Unknown'))
+  const employmentTypeCounts = counts(apps.map((a) => a.loan.employment_type || 'Unknown'))
+  const docTypeCounts = counts(apps.flatMap((a) => (a.document_files ?? []).map((d) => d.type || 'UNKNOWN')))
+
+  const m = getDashboardMetrics(apps)
+
+  return (
+    <div className="page-content analytics-page">
+      <div className="page-intro">
+        <div><p className="section-kicker">Portfolio insight</p><h2>Analytics</h2><p className="muted">Decision mix, agent confidence and portfolio composition across all {apps.length} applications.</p></div>
+        <StatusPill tone="blue">{m.needsReview} need review</StatusPill>
+      </div>
+      <div className="stats-grid">
+        <StatCard label="Applications" value={String(m.totalApplications)} detail={`${m.needsReview} need review`} icon={Inbox} tone="blue" />
+        <StatCard label="Approval rate" value={m.approvalRate} detail="Of decided applications" icon={Check} tone="mint" />
+        <StatCard label="Avg. risk score" value={avgRisk === null ? '—' : avgRisk.toFixed(1)} detail={`${highRisk} below 60`} icon={AlertCircle} tone="amber" />
+        <StatCard label="Loan book" value={m.portfolioValue} detail="Requested loan amount" icon={CreditCard} tone="lavender" />
+      </div>
+      <div className="report-columns" style={{ marginTop: 20 }}>
+        <section className="panel report-section">
+          <h3>Decision mix</h3>
+          {Object.entries(decisionCounts).map(([k, v]) => (
+            <MetricBar key={k} label={k} value={`${v} (${Math.round((v / decisionTotal) * 100)}%)`} score={(v / decisionTotal) * 100} tone={k === 'APPROVE' ? 'green' : undefined} />
+          ))}
+        </section>
+        <section className="panel report-section">
+          <h3>Average agent confidence</h3>
+          {stageAvgConfidence.map(({ label, avg }) => (
+            <MetricBar key={label} label={label} value={avg === null ? '—' : formatPct(avg)} score={avg === null ? 0 : avg * 100} tone={avg !== null && avg < 0.6 ? undefined : 'green'} />
+          ))}
+        </section>
+      </div>
+      <div className="report-columns" style={{ marginTop: 20 }}>
+        <section className="panel report-section">
+          <h3>Property type mix</h3>
+          <KeyValues rows={Object.entries(propertyTypeCounts).map(([k, v]) => [k, `${v} (${Math.round((v / apps.length) * 100)}%)`])} />
+        </section>
+        <section className="panel report-section">
+          <h3>Employment type mix</h3>
+          <KeyValues rows={Object.entries(employmentTypeCounts).map(([k, v]) => [k, `${v} (${Math.round((v / apps.length) * 100)}%)`])} />
+        </section>
+      </div>
+      <section className="panel report-section" style={{ marginTop: 20 }}>
+        <h3>Document types across the portfolio</h3>
+        <KeyValues rows={Object.entries(docTypeCounts).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k.replace(/_/g, ' '), String(v)])} />
+      </section>
+      <div className="review-next" style={{ marginTop: 20 }}>
+        <div><UsersRound size={20} /><div><strong>Borrowers</strong><span>See every borrower and their application history.</span></div></div>
+        <button className="primary-button" onClick={() => setView('borrowers')}>Open borrowers <ArrowRight size={15} /></button>
+      </div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------- borrowers */
+// Derived from the application list - there is no separate borrower entity
+// in the backend, so a borrower is "every distinct name on an application."
+
+export function Borrowers({ apps, setView, open }: { apps: ApplicationView[] } & Nav) {
+  const [expanded, setExpanded] = useState<string | null>(null)
+  if (apps.length === 0) return <NoApplication setView={setView} title="No borrowers yet" />
+
+  const groups = new Map<string, ApplicationView[]>()
+  for (const a of apps) {
+    const key = a.borrower || 'Unknown borrower'
+    groups.set(key, [...(groups.get(key) ?? []), a])
+  }
+  const borrowers = [...groups.entries()]
+    .map(([name, list]) => ({
+      name,
+      list,
+      latest: list[0],
+      totalRequested: list.reduce((s, a) => s + (a.loan.amount ?? 0), 0),
+    }))
+    .sort((a, b) => new Date(b.latest.created_at).getTime() - new Date(a.latest.created_at).getTime())
+
+  return (
+    <div className="page-content borrowers-page">
+      <div className="page-intro">
+        <div><p className="section-kicker">Borrower directory</p><h2>Borrowers</h2><p className="muted">{borrowers.length} borrower{borrowers.length === 1 ? '' : 's'} across {apps.length} application{apps.length === 1 ? '' : 's'}.</p></div>
+      </div>
+      <div className="panel table-panel">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Borrower</th><th>Applications</th><th>Total requested</th><th>Latest status</th><th>Latest application</th><th /></tr></thead>
+            <tbody>
+              {borrowers.map((b) => (
+                <Fragment key={b.name}>
+                  <tr onClick={() => setExpanded(expanded === b.name ? null : b.name)}>
+                    <td><span className="borrower-cell"><span className="borrower-avatar">{b.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}</span>{b.name}</span></td>
+                    <td>{b.list.length}</td>
+                    <td className="amount">{formatInr(b.totalRequested)}</td>
+                    <td><StatusPill tone={statusTone(b.latest.status)}>{b.latest.status}</StatusPill></td>
+                    <td>{new Date(b.latest.created_at).toLocaleDateString()}</td>
+                    <td><ChevronDown size={15} style={{ transform: expanded === b.name ? 'rotate(180deg)' : undefined }} /></td>
+                  </tr>
+                  {expanded === b.name && (
+                    <tr>
+                      <td colSpan={6} style={{ background: '#f9fbfd', cursor: 'default' }}>
+                        <ul className="doc-links">
+                          {b.list.map((a) => (
+                            <li key={a.id}>
+                              <button className="application-id" onClick={() => open(a.id)}>{a.id}</button>
+                              <small> · {a.property_label} · {formatInr(a.loan.amount)} · {a.status}</small>
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------- documents */
+// Flattens every stored document across every application into one list -
+// same source data as each application's own "Submitted documents" panel.
+
+export function Documents({ apps, setView, open }: { apps: ApplicationView[] } & Nav) {
+  if (apps.length === 0) return <NoApplication setView={setView} title="No documents yet" />
+
+  const docs = apps.flatMap((a) => (a.document_files ?? []).map((d) => ({ ...d, application: a })))
+    .sort((a, b) => new Date(b.application.created_at).getTime() - new Date(a.application.created_at).getTime())
+  const totalSize = docs.reduce((s, d) => s + (d.size_bytes ?? 0), 0)
+  const typeCounts = counts(docs.map((d) => d.type || 'UNKNOWN'))
+  const topType = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0]
+
+  return (
+    <div className="page-content documents-page">
+      <div className="page-intro">
+        <div><p className="section-kicker">Document store</p><h2>Documents</h2><p className="muted">Every source document ingested across all applications.</p></div>
+      </div>
+      <div className="stats-grid">
+        <StatCard label="Documents" value={String(docs.length)} detail={`Across ${apps.length} application${apps.length === 1 ? '' : 's'}`} icon={FileText} tone="blue" />
+        <StatCard label="Storage used" value={formatSize(totalSize)} detail="Stored source PDFs" icon={UploadCloud} tone="mint" />
+        <StatCard label="Most common type" value={topType ? topType[0].replace(/_/g, ' ') : '—'} detail={topType ? `${topType[1]} documents` : ''} icon={FileCheck2} tone="lavender" />
+        <StatCard label="Distinct types" value={String(Object.keys(typeCounts).length)} detail="Document categories seen" icon={BarChart3} tone="amber" />
+      </div>
+      <div className="panel table-panel">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Document</th><th>Type</th><th>Size</th><th>Application</th><th>Borrower</th><th>Uploaded</th></tr></thead>
+            <tbody>
+              {docs.map((d) => (
+                <tr key={d.id}>
+                  <td><a href={documentUrl(d.application.id, d.id)} target="_blank" rel="noreferrer" className="application-id">{d.filename.replace(/^\d{2}_/, '')}</a></td>
+                  <td>{(d.type || 'UNKNOWN').replace(/_/g, ' ')}</td>
+                  <td>{formatSize(d.size_bytes ?? 0)}</td>
+                  <td><button className="application-id" onClick={() => open(d.application.id)}>{d.application.id}</button></td>
+                  <td>{d.application.borrower}</td>
+                  <td>{new Date(d.application.created_at).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
