@@ -18,6 +18,16 @@ _STABLE_LISTINGS = {"listings": [
     for i in range(5)
 ]}
 
+# Same idea, tuned to the correctable_pan_error demo's declared property
+# value (Rs 99 lakh for the 2,400 sqft Thondamuthur plot - see
+# app.services.applications.DEMO_SCENARIOS) instead of the clean demo's
+# Rs 75 lakh, so that scenario's own contradiction-free baseline doesn't
+# depend on live AVnester either: price/sqft 4,125 x 2,400 sqft = Rs 99L.
+_STABLE_LISTINGS_PAN_DEMO = {"listings": [
+    {"listingId": f"pan-id-{i}", "title": "t", "locality": "X", "price": 4_125_000, "carpetAreaSqft": 1000}
+    for i in range(5)
+]}
+
 
 def _run_clean_demo() -> dict:
     with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS):
@@ -179,7 +189,7 @@ def test_correctable_pan_error_demo_scenario_approves_after_fix():
     """The dedicated demo scenario for showing document correction live:
     baseline run is blocked by a malformed PAN number; correcting just
     that field and rerunning approves it."""
-    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS):
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS_PAN_DEMO):
         r = client.post("/api/v1/underwriting/run", data={"demo_scenario": "correctable_pan_error"})
     assert r.status_code == 200, r.text
     view = r.json()
@@ -192,14 +202,15 @@ def test_correctable_pan_error_demo_scenario_approves_after_fix():
     )
     assert put.status_code == 200
 
-    rerun = _rerun(view["id"]).json()
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS_PAN_DEMO):
+        rerun = client.post(f"/api/v1/applications/{view['id']}/rerun").json()
     assert rerun["decision"]["decision"] == "APPROVE"
 
 
 def test_rerun_records_a_version_history_entry_with_the_field_change():
     """The mentor-requested bit: one application id, but a reviewer must
     still be able to see what changed and what it did to the decision."""
-    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS):
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS_PAN_DEMO):
         r = client.post("/api/v1/underwriting/run", data={"demo_scenario": "correctable_pan_error"})
     view = r.json()
     assert view["decision"]["decision"] == "SUSPEND"
@@ -210,7 +221,8 @@ def test_rerun_records_a_version_history_entry_with_the_field_change():
         f"/api/v1/applications/{view['id']}/documents/{doc['id']}/parsed",
         json={"overrides": {"pan_number": "ABCPS1234F"}},
     )
-    rerun = _rerun(view["id"]).json()
+    with patch("app.tools.external_api.search_properties", return_value=_STABLE_LISTINGS_PAN_DEMO):
+        rerun = client.post(f"/api/v1/applications/{view['id']}/rerun").json()
 
     history = rerun["version_history"]
     assert len(history) == 1

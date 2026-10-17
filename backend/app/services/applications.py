@@ -101,7 +101,14 @@ DEMO_SCENARIOS: dict[str, dict[str, Any]] = {
         "profile": {
             "name": "Aarav Sharma", "monthly_income": 150000, "employment_type": "Salaried",
             "loan_amount": 5_000_000, "loan_tenure_months": 240,
-            "property_value": 7_500_000, "existing_debt": 15000,
+            # AVnester's live valuation for this demo's Thondamuthur/Coimbatore
+            # plot is ~Rs 99.18L (checked directly against the API), not the
+            # property deed's original Rs 75L sale price. Declaring a value
+            # this far from the live AVnester estimate was tripping the
+            # Decision Agent's own >20%-variance contradiction check
+            # (app.decision.contradiction_detector) AFTER the PAN fix, so the
+            # demo never reached APPROVE even once the PAN was corrected.
+            "property_value": 9_900_000, "existing_debt": 15000,
         },
         "bureau": _CLEAN_BUREAU,
     },
