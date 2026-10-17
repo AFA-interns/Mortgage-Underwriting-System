@@ -6,7 +6,7 @@ records you supply; none of this calls the agent itself. Implements:
 1. Classification Metrics (Accuracy, Balanced Accuracy, Per-Class Precision/Recall/F1, Cost Matrix)
 2. Field-Level Extraction Metrics (Exact Match, Token F1, Numeric Tolerance Accuracy, CER, WER)
 3. Cross-Document Reconciliation & Contradiction Detection Recall
-4. Confidence Calibration (Brier Score, Expected Calibration Error - ECE, Reliability Bins)
+4. Confidence Calibration (Brier Score, Expected Calibration Error - ECE, Gate-Passing Error Rate, Reliability Bins)
 5. Asymmetric Ingestion Cost-Weighted Error
 6. Runtime & Operational Metrics (STP Rate, HITL Escalation Rate, Gate Triggers)
 
@@ -178,16 +178,18 @@ def compute_classification_metrics(
 # 4. Asymmetric Ingestion Cost-Weighted Error
 # -----------------------------------------------------------------------------
 
-# Ingestion Asymmetric Prototype Cost Matrix
-# Misclassifying or failing to extract certain critical items has severe downstream risk
+# Ingestion Asymmetric Prototype Cost Matrix - covers all 8 of the real
+# classifier's document types (see app.document_ingestion.classifier.DocumentType).
+# Misclassifying or failing to extract certain critical items has severe downstream risk.
 DEFAULT_CLASSIFICATION_COST_MATRIX = {
     # Actual \ Predicted
-    "BANK_STATEMENT": {"BANK_STATEMENT": 0, "SALARY_SLIP": 10, "UNKNOWN": 2, "OTHER": 8},
-    "PAN_CARD": {"PAN_CARD": 0, "AADHAAR_CARD": 4, "UNKNOWN": 2, "OTHER": 8},
-    "AADHAAR_CARD": {"AADHAAR_CARD": 0, "PAN_CARD": 4, "UNKNOWN": 2, "OTHER": 8},
-    "SALARY_SLIP": {"SALARY_SLIP": 0, "FORM_16": 3, "UNKNOWN": 2, "OTHER": 6},
-    "FORM_16": {"FORM_16": 0, "ITR": 3, "UNKNOWN": 2, "OTHER": 6},
-    "PROPERTY_DEED": {"PROPERTY_DEED": 0, "UNKNOWN": 3, "OTHER": 8},
+    "BANK_STATEMENT": {"BANK_STATEMENT": 0, "SALARY_SLIP": 10, "FORM_16": 6, "ITR": 6, "PAN_CARD": 8, "AADHAAR_CARD": 8, "PROPERTY_DEED": 8, "UNKNOWN": 2, "OTHER": 8},
+    "PAN_CARD": {"PAN_CARD": 0, "AADHAAR_CARD": 4, "SALARY_SLIP": 8, "FORM_16": 6, "ITR": 6, "BANK_STATEMENT": 8, "PROPERTY_DEED": 8, "UNKNOWN": 2, "OTHER": 8},
+    "AADHAAR_CARD": {"AADHAAR_CARD": 0, "PAN_CARD": 4, "SALARY_SLIP": 8, "FORM_16": 6, "ITR": 6, "BANK_STATEMENT": 8, "PROPERTY_DEED": 8, "UNKNOWN": 2, "OTHER": 8},
+    "SALARY_SLIP": {"SALARY_SLIP": 0, "FORM_16": 3, "ITR": 3, "BANK_STATEMENT": 10, "PAN_CARD": 8, "AADHAAR_CARD": 8, "PROPERTY_DEED": 8, "UNKNOWN": 2, "OTHER": 6},
+    "FORM_16": {"FORM_16": 0, "ITR": 2, "SALARY_SLIP": 3, "BANK_STATEMENT": 8, "PAN_CARD": 6, "AADHAAR_CARD": 6, "PROPERTY_DEED": 8, "UNKNOWN": 2, "OTHER": 6},
+    "ITR": {"ITR": 0, "FORM_16": 2, "SALARY_SLIP": 3, "BANK_STATEMENT": 8, "PAN_CARD": 6, "AADHAAR_CARD": 6, "PROPERTY_DEED": 8, "UNKNOWN": 2, "OTHER": 6},
+    "PROPERTY_DEED": {"PROPERTY_DEED": 0, "BANK_STATEMENT": 8, "SALARY_SLIP": 8, "FORM_16": 8, "ITR": 8, "PAN_CARD": 8, "AADHAAR_CARD": 8, "UNKNOWN": 3, "OTHER": 8},
     "UNKNOWN": {"UNKNOWN": 0, "OTHER": 3},
 }
 
@@ -275,6 +277,27 @@ def compute_ece(
     return round(ece, 4), bins
 
 
+def compute_gate_passing_error_rate(
+    confidences: List[float],
+    correctness: List[int],
+    threshold: float = 0.85
+) -> float:
+    """Of the cases confident enough to clear the auto-proceed gate
+    (confidence >= threshold), the share that were actually wrong. This is
+    the calibration failure mode that matters operationally: ECE averages
+    over all confidence levels, but a case that clears the gate and is still
+    wrong is the one that reaches a downstream agent unreviewed. Target: 0.0.
+    """
+    if not confidences or len(confidences) != len(correctness):
+        raise ValueError("confidences and correctness must be non-empty and of equal length.")
+
+    above_threshold = [(c, y) for c, y in zip(confidences, correctness) if c >= threshold]
+    if not above_threshold:
+        return 0.0
+    errors = sum(1 for _, y in above_threshold if y == 0)
+    return round(errors / len(above_threshold), 4)
+
+
 # -----------------------------------------------------------------------------
 # 6. Cross-Document Reconciliation & Contradiction Detection Metrics
 # -----------------------------------------------------------------------------
@@ -286,12 +309,15 @@ def compute_reconciliation_metrics(
     Evaluates contradiction detection and cross-document reconciliation performance:
     - Contradiction Detection Recall (Safety-Critical Recall)
     - Contradiction Detection Precision
+    - Contradiction Handling Accuracy (of contradictions caught, how many also
+      triggered the correct downstream action - e.g. HITL routing)
     - Name Matching Accuracy
     - Income vs Bank Credit Reconciliation Accuracy
     """
     total_actual_contradictions = 0
     detected_true_contradictions = 0
     false_alarm_contradictions = 0
+    correct_action_count = 0
 
     name_matches_eval = []
     salary_reconcile_eval = []
@@ -303,6 +329,8 @@ def compute_reconciliation_metrics(
         if actual_has_conflict and pred_has_conflict:
             detected_true_contradictions += 1
             total_actual_contradictions += 1
+            if case.get("action_matched_expected", True):
+                correct_action_count += 1
         elif actual_has_conflict and not pred_has_conflict:
             total_actual_contradictions += 1
         elif not actual_has_conflict and pred_has_conflict:
@@ -320,6 +348,7 @@ def compute_reconciliation_metrics(
     contra_f1 = round(
         2 * contra_prec * contra_recall / max(contra_prec + contra_recall, 1e-6), 4
     )
+    contra_handling_acc = round(correct_action_count / max(detected_true_contradictions, 1), 4)
 
     name_acc = round(sum(name_matches_eval) / max(len(name_matches_eval), 1), 4)
     salary_acc = round(sum(salary_reconcile_eval) / max(len(salary_reconcile_eval), 1), 4)
@@ -328,6 +357,7 @@ def compute_reconciliation_metrics(
         "contradiction_recall": contra_recall,
         "contradiction_precision": contra_prec,
         "contradiction_f1": contra_f1,
+        "contradiction_handling_accuracy": contra_handling_acc,
         "name_matching_accuracy": name_acc,
         "salary_reconciliation_accuracy": salary_acc,
         "total_actual_contradictions": total_actual_contradictions,

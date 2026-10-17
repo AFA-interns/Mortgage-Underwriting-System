@@ -9,6 +9,7 @@ from app.document_ingestion.metrics import (
     compute_cost_weighted_error,
     compute_ece,
     compute_exact_match,
+    compute_gate_passing_error_rate,
     compute_levenshtein_distance,
     compute_numeric_accuracy,
     compute_operational_metrics,
@@ -116,6 +117,23 @@ def test_ece_perfect_calibration_is_zero():
     assert sum(b["count"] for b in bins) == 10
 
 
+def test_gate_passing_error_rate_counts_only_wrong_cases_above_threshold():
+    # 3 cases clear the 0.85 gate; 1 of them is wrong -> 1/3. The 4th case
+    # (0.5 confidence, wrong) never clears the gate, so it's excluded.
+    confidences = [0.9, 0.95, 0.86, 0.5]
+    correctness = [1, 1, 0, 0]
+    assert compute_gate_passing_error_rate(confidences, correctness, threshold=0.85) == pytest.approx(1 / 3, abs=1e-4)
+
+
+def test_gate_passing_error_rate_zero_when_nothing_clears_the_gate():
+    assert compute_gate_passing_error_rate([0.5, 0.6], [1, 0], threshold=0.85) == 0.0
+
+
+def test_gate_passing_error_rate_rejects_mismatched_lengths():
+    with pytest.raises(ValueError):
+        compute_gate_passing_error_rate([0.9], [])
+
+
 # ------------------------------------------------------------- reconciliation
 
 def test_reconciliation_metrics_recall_and_precision():
@@ -131,6 +149,27 @@ def test_reconciliation_metrics_recall_and_precision():
     assert m["contradiction_recall"] == 0.5
     assert m["contradiction_precision"] == 0.5
     assert m["name_matching_accuracy"] == 0.75
+
+
+def test_reconciliation_metrics_contradiction_handling_accuracy():
+    # Of the 2 correctly-detected contradictions, only 1 also triggered the
+    # expected downstream action (e.g. HITL routing).
+    cases = [
+        {"has_contradiction": True, "predicted_has_contradiction": True, "action_matched_expected": True},
+        {"has_contradiction": True, "predicted_has_contradiction": True, "action_matched_expected": False},
+        {"has_contradiction": True, "predicted_has_contradiction": False},
+    ]
+    m = compute_reconciliation_metrics(cases)
+    assert m["detected_contradictions"] == 2
+    assert m["contradiction_handling_accuracy"] == 0.5
+
+
+def test_reconciliation_metrics_contradiction_handling_accuracy_defaults_to_correct():
+    # action_matched_expected defaults to True when a caller doesn't track it,
+    # so existing callers that never set it aren't penalized.
+    cases = [{"has_contradiction": True, "predicted_has_contradiction": True}]
+    m = compute_reconciliation_metrics(cases)
+    assert m["contradiction_handling_accuracy"] == 1.0
 
 
 # ------------------------------------------------------------- operational

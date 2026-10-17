@@ -24,6 +24,7 @@ from app.document_ingestion.metrics import (  # noqa: E402
     compute_cost_weighted_error,
     compute_ece,
     compute_exact_match,
+    compute_gate_passing_error_rate,
     compute_numeric_accuracy,
     compute_operational_metrics,
     compute_reconciliation_metrics,
@@ -125,6 +126,9 @@ def run_report() -> dict:
             "has_contradiction": label["has_contradiction"],
             "predicted_has_contradiction": output.reconciliation.total_contradictions_count > 0,
             "name_match_correct": name_match_correct,
+            # Did correctly detecting the contradiction also route the case
+            # to the correct downstream action (HITL vs. not)?
+            "action_matched_expected": bool(is_correct),
         }
         if name in SALARY_RECONCILES:
             salary_recons = output.reconciliation.salary_reconciliations
@@ -161,6 +165,7 @@ def run_report() -> dict:
         "calibration": {
             "brier_score": compute_brier_score(confidences, correctness),
             **dict(zip(("ece", "reliability_bins"), compute_ece(confidences, correctness, num_bins=5))),
+            "gate_passing_error_rate": compute_gate_passing_error_rate(confidences, correctness, threshold=0.85),
         },
         "reconciliation": compute_reconciliation_metrics(recon_eval_cases),
         "operational": compute_operational_metrics(audit_records),
@@ -204,8 +209,10 @@ def _print_summary(report: dict) -> None:
     print(f"Cost-weighted error:          {report['cost_weighted_error']:.4f}")
     print(f"Brier score:                  {cal['brier_score']:.4f}")
     print(f"ECE:                          {cal['ece']:.4f}")
+    print(f"Gate-passing error rate:      {cal['gate_passing_error_rate']:.4f}")
     print(f"Contradiction recall:         {recon['contradiction_recall']:.4f}")
     print(f"Contradiction precision:      {recon['contradiction_precision']:.4f}")
+    print(f"Contradiction handling acc.:  {recon['contradiction_handling_accuracy']:.4f}")
     print(f"STP rate:                     {ops.get('straight_through_processing_rate', 0):.4f}")
     print(f"HITL escalation rate:         {ops.get('hitl_escalation_rate', 0):.4f}")
     print("Field-level checks (clean_prime):")

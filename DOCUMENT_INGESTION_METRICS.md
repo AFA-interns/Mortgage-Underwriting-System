@@ -54,7 +54,7 @@ $$\text{Precision} = \frac{\text{TP}}{\text{TP} + \text{FP}}, \quad \text{Recall
 - **Why Chosen:** The business impact of misclassification is asymmetric. Misclassifying a Bank Statement as an arbitrary document can cause an unverified credit approval, making high Recall on financial proofs a critical safety requirement.
 
 ### 2.3 Asymmetric Ingestion Cost Matrix
-A prototype cost penalty matrix weights misclassifications by downstream risk (e.g., misreading a Bank Statement as a Salary Slip costs far more than misreading an ambiguous scan as `UNKNOWN`, which safely triggers human review instead of poisoning income figures).
+A prototype cost penalty matrix weights misclassifications by downstream risk (e.g., misreading a Bank Statement as a Salary Slip costs far more than misreading an ambiguous scan as `UNKNOWN`, which safely triggers human review instead of poisoning income figures). The matrix covers all 8 document classes the classifier actually produces (including `ITR`, previously missing from the matrix).
 $$\text{Cost-Weighted Error} = \frac{1}{N} \sum \text{Cost}[\text{Actual}][\text{Predicted}]$$
 
 ---
@@ -85,6 +85,9 @@ $$\text{Contradiction Recall} = \frac{\text{True Contradictions Detected}}{\text
 ### 4.2 Name Resolution & Income Reconciliation Accuracy
 Evaluates token-based fuzzy string matching across PAN, Aadhaar, Salary Slips, Bank Statements, and Property Deeds against ground-truth name equivalence, and verifies monthly net salary on payslips against bank credit within a tolerance band.
 
+### 4.3 Contradiction Handling Accuracy
+Detecting a contradiction is only half the safety requirement - of the contradictions correctly caught, this measures how many also triggered the correct downstream action (e.g. routing to human review rather than just being logged). Recall alone can't catch "flagged but not escalated."
+
 ---
 
 ## 5. Confidence Calibration Metrics
@@ -96,6 +99,9 @@ Lower is better; 0.0 is perfect calibration. Penalizes overconfidence and reward
 ### 5.2 Expected Calibration Error (ECE) and Reliability Bins
 $$\text{ECE} = \sum_{m=1}^{M} \frac{|B_m|}{N} \left| \text{acc}(B_m) - \text{conf}(B_m) \right|$$
 The agent uses $\text{Confidence} \ge 0.85$ as the gateway for automated straight-through processing; ECE tests whether predictions rated $\ge 0.85$ confidence actually achieve comparably high accuracy.
+
+### 5.3 Gate-Passing Error Rate
+ECE averages the calibration gap across every confidence level, which can hide the one failure mode that actually matters operationally: a case that clears the $\ge 0.85$ auto-proceed gate and is still wrong reaches a downstream agent with no human in the loop. This metric isolates exactly that - the error rate restricted to cases that cleared the gate. Target: 0.0.
 
 ---
 
@@ -115,7 +121,7 @@ Computed from live audit logs, no ground-truth labels required:
 
 ## 7. Implementation
 
-All of the above are implemented as pure, tested functions in `backend/app/document_ingestion/metrics.py` (`compute_classification_metrics`, `compute_cost_weighted_error`, `compute_cer`/`compute_wer`, `compute_exact_match`/`compute_token_f1`, `compute_numeric_accuracy`, `compute_brier_score`/`compute_ece`, `compute_reconciliation_metrics`, `compute_operational_metrics`) — see `backend/tests/test_document_ingestion_metrics.py` for hand-computed correctness checks on each one.
+All of the above are implemented as pure, tested functions in `backend/app/document_ingestion/metrics.py` (`compute_classification_metrics`, `compute_cost_weighted_error`, `compute_cer`/`compute_wer`, `compute_exact_match`/`compute_token_f1`, `compute_numeric_accuracy`, `compute_brier_score`/`compute_ece`/`compute_gate_passing_error_rate`, `compute_reconciliation_metrics`, `compute_operational_metrics`) — see `backend/tests/test_document_ingestion_metrics.py` for hand-computed correctness checks on each one.
 
 ### 7.1 Results — bundled demo scenarios (real, small sample)
 
@@ -126,10 +132,12 @@ Reproduce with `cd backend && venv\Scripts\python.exe scripts/document_ingestion
 | Document Classification Accuracy / Balanced Accuracy | 100.0% / 100.0% (35/35 documents, all 6 classes) |
 | Asymmetric Cost-Weighted Error | 0.0000 |
 | Contradiction Detection Recall / Precision | 100.0% / 100.0% (2/2 planted contradictions caught, no false alarms) |
+| Contradiction Handling Accuracy | 100.0% (both caught contradictions also triggered the correct HITL routing) |
 | Name Resolution Accuracy | 100.0% |
 | Salary ↔ Bank Reconciliation Accuracy | 100.0% (4 bundles with a bank statement to reconcile against) |
 | Brier Calibration Score | 0.0210 |
 | Expected Calibration Error (ECE, 5 bins) | 0.1153 |
+| Gate-Passing Error Rate (confidence ≥ 0.85) | 0.0000 (no case that cleared the auto-proceed gate was wrong) |
 | Straight-Through Processing (STP) Rate | 33.3% (2 of 6 bundles needed no review) |
 | HITL Escalation Rate | 66.7% (4 of 6 — by design, most of these demo bundles exist to exercise a safety gate) |
 | HITL Routing Decision Accuracy | 100.0% (6/6 bundles routed correctly vs. their known expected outcome) |
