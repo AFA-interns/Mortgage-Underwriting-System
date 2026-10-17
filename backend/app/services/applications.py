@@ -20,7 +20,9 @@ from typing import Any
 
 from app.document_ingestion.field_overrides import editable_fields_for, validate_overrides
 from app.graph.workflow import build_underwriting_graph
+from app.models.decision import DecisionResult
 from app.models.document_ingestion import DocumentType
+from app.services.audit import create_audit_record
 from app.services.credit_bureau import SOURCE_DEMO, resolve_bureau_data
 
 logger = logging.getLogger(__name__)
@@ -456,6 +458,27 @@ def run_application(
     ]
 
     view = build_view(app_id, result, profile, file_names, started, source, document_files)
+
+    # Record this run's decision to the audit log - the Decision Agent
+    # evaluation endpoints (/evaluation/runtime, /underwriting/{id}/decision
+    # and .../report) read exclusively from here, and nothing else populated
+    # it until now.
+    try:
+        decision_result = DecisionResult.model_validate(result.get("decision") or {})
+    except Exception:
+        logger.warning("Could not build a DecisionResult for audit record (application %s)", app_id, exc_info=True)
+    else:
+        create_audit_record(
+            application_id=app_id,
+            validation=result.get("validation_result"),
+            contradictions=result.get("contradictions"),
+            risk_assessment=result.get("risk_assessment"),
+            confidence_assessment=result.get("confidence_assessment"),
+            crew_output=result.get("decision_crew_output"),
+            final_decision=decision_result,
+            errors=[e.get("message", str(e)) if isinstance(e, dict) else str(e) for e in result.get("errors", [])],
+        )
+
     # Audit record of the applicant's consent to a bureau pull. Nothing is
     # pulled yet (no bureau integration), but the consent is captured now so a
     # future real pull has a record to rely on.

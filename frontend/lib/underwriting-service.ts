@@ -96,6 +96,117 @@ export type DemoScenario = {
   profile: Record<string, any>
 }
 
+export type AgentMetricsStatus = {
+  agent: 'document_ingestion' | 'decision' | 'credit' | 'property' | 'compliance'
+  label: string
+  status: 'runnable' | 'unavailable'
+  description: string
+  endpoint: string | null
+  method: 'GET' | 'POST' | null
+}
+
+export type DocumentIngestionMetricsReport = {
+  sample_size: { bundles: number; documents: number }
+  classification: { accuracy: number; balanced_accuracy: number; per_class: Record<string, any>; total_samples: number }
+  cost_weighted_error: number
+  calibration: { brier_score: number; ece: number; gate_passing_error_rate: number; reliability_bins: Record<string, any>[] }
+  reconciliation: {
+    contradiction_recall: number
+    contradiction_precision: number
+    contradiction_f1: number
+    contradiction_handling_accuracy: number
+    name_matching_accuracy: number
+    salary_reconciliation_accuracy: number
+    total_actual_contradictions: number
+    detected_contradictions: number
+  }
+  operational: {
+    total_applications: number
+    straight_through_processing_rate: number
+    hitl_escalation_rate: number
+    mean_confidence: number
+    below_threshold_rate: number
+    safety_gate_triggers: Record<string, number>
+  }
+  per_bundle: Array<{
+    bundle: string
+    documents: number
+    overall_confidence: number
+    confidence_level: string
+    requires_human_review: boolean
+    expected_hitl: boolean
+    hitl_decision_correct: boolean
+    contradictions_detected: number
+    missing_mandatory_documents: string[]
+  }>
+  field_level_checks_clean_prime: Record<string, number>
+}
+
+export type DecisionRuntimeMetrics = {
+  n_decisions: number
+  decision_distribution: Record<string, number>
+  suspend_rate: number
+  auto_decision_rate: number
+  mean_confidence: number
+  below_threshold_rate: number
+  gate_trigger_counts: Record<string, number>
+  crew_agreement_rate: number | null
+}
+
+// CREDIT_METRICS.md Phase 1 - no outcome labels needed.
+export type CreditPhase1Report = {
+  available: boolean
+  reason?: string
+  n_applications?: number
+  bureau_source_mix?: {
+    total: number
+    sources: Record<string, { count: number; pct: number }>
+    simulated_share_pct: number
+    unverified_share_pct: number
+    meets_production_target: boolean
+  }
+  flag_trigger_rates?: {
+    total: number
+    flags: Record<string, { count: number; pct: number }>
+    applications_with_any_flag: number
+  }
+  decision_distribution?: {
+    total: number
+    missing_decision: number
+    other: number
+    decisions: Record<string, { count: number; pct: number }>
+  }
+  confidence_distribution?: {
+    n: number
+    histogram: Array<{ bin: string; count: number; pct: number }>
+    at_floor_count: number
+    at_floor_pct: number
+    floor_alert: boolean
+    formula_mismatches: Array<{ application_id: string; stored: number; expected: number }>
+  }
+  agreement_matrix?: {
+    compared: number
+    skipped: number
+    agreement_rate_pct: number
+    off_diagonal: Array<{ application_id: string; credit: string; decision: string }>
+    severe_conflicts: Array<{ application_id: string; credit: string; decision: string }>
+  }
+  upstream_data_quality_rate?: {
+    reviewed: number
+    not_reviewed: number
+    overridden: number
+    rate_pct: number
+    by_field: Record<string, number>
+  }
+  adverse_impact_ratio?: {
+    group_key: string
+    threshold: number
+    favourable_approve: { air: number | null; status: string; rates_pct: Record<string, number>; flagged: boolean }
+    small_groups: string[]
+    note: string
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
   if (!res.ok) {
@@ -133,6 +244,15 @@ export const underwritingService = {
   /** Re-runs the full pipeline with saved corrections applied, producing a new, linked application. */
   rerunApplication: (applicationId: string) =>
     request<ApplicationView>(`/api/v1/applications/${encodeURIComponent(applicationId)}/rerun`, { method: 'POST' }),
+  /** Which agents have a real, runnable benchmark right now, and which don't (with why). */
+  getAgentMetricsOverview: () => request<AgentMetricsStatus[]>('/api/v1/metrics/overview'),
+  /** Runs the real Document Ingestion Agent against this project's own bundled demo scenarios. Takes a few seconds. */
+  runDocumentIngestionMetrics: () =>
+    request<DocumentIngestionMetricsReport>('/api/v1/metrics/document-ingestion', { method: 'POST' }),
+  /** Live runtime metrics from every decision this server has actually audited so far - no labels required. */
+  getDecisionRuntimeMetrics: () => request<DecisionRuntimeMetrics>('/evaluation/runtime'),
+  /** CREDIT_METRICS.md Phase 1 report, computed live from every stored application - no outcome labels needed. */
+  runCreditMetrics: () => request<CreditPhase1Report>('/api/v1/metrics/credit', { method: 'POST' }),
 }
 
 export const documentUrl = (applicationId: string, docId: string): string =>

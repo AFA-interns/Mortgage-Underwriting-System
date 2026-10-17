@@ -599,3 +599,107 @@ async def evaluation_runtime() -> dict[str, Any]:
         if final_decision:
             decisions.append(DecisionResult.model_validate(final_decision))
     return runtime_metrics_from_decisions(decisions).model_dump(mode="json")
+
+
+# -------------------------------------------------------
+# Per-agent metrics (frontend "Agent Metrics" page)
+# -------------------------------------------------------
+# Each agent is honest about what it can actually measure right now rather
+# than reporting a number it doesn't have real data for - see
+# AGENT_METRICS_STATUS below and DOCUMENT_INGESTION_METRICS.md / CREDIT_METRICS.md.
+
+AGENT_METRICS_STATUS: list[dict[str, Any]] = [
+    {
+        "agent": "document_ingestion",
+        "label": "Document Ingestion Agent",
+        "status": "runnable",
+        "description": (
+            "Runs the real agent against this project's own 6 bundled demo "
+            "scenarios (35 documents, hand-labeled ground truth) and computes "
+            "classification, calibration, reconciliation, and operational metrics."
+        ),
+        "endpoint": "/api/v1/metrics/document-ingestion",
+        "method": "POST",
+    },
+    {
+        "agent": "decision",
+        "label": "Decision Agent",
+        "status": "runnable",
+        "description": (
+            "Runtime/operational metrics (decision mix, mean confidence, mean "
+            "risk score) computed live from every decision this server has "
+            "actually audited so far - no labels required. The audit log is "
+            "in-memory and resets on server restart, so this can read 0 even "
+            "when the Applications list (backed by Postgres) isn't empty."
+        ),
+        "endpoint": "/evaluation/runtime",
+        "method": "GET",
+    },
+    {
+        "agent": "credit",
+        "label": "Credit Agent",
+        "status": "runnable",
+        "description": (
+            "CREDIT_METRICS.md Phase 1 (bureau source mix, red-flag trigger "
+            "rates, decision distribution, confidence-formula checks, Credit "
+            "vs Decision agreement, upstream data-quality rate, adverse impact "
+            "ratio) computed live from every application this server has "
+            "stored - no outcome labels needed. Phase 2 (drift) needs two "
+            "saved batches and Phase 3 (AUC/KS/bad-rate) needs closed-loan "
+            "outcomes, neither of which this system captures yet, so those "
+            "stay out of this report."
+        ),
+        "endpoint": "/api/v1/metrics/credit",
+        "method": "POST",
+    },
+    {
+        "agent": "property",
+        "label": "Property Valuation Agent",
+        "status": "unavailable",
+        "description": (
+            "No evaluation framework exists yet for this agent - there is no "
+            "ground-truth sale price dataset to score the valuation against."
+        ),
+        "endpoint": None,
+        "method": None,
+    },
+    {
+        "agent": "compliance",
+        "label": "Compliance Agent",
+        "status": "unavailable",
+        "description": "No evaluation framework exists yet for this agent.",
+        "endpoint": None,
+        "method": None,
+    },
+]
+
+
+@app.get("/api/v1/metrics/overview")
+async def agent_metrics_overview() -> list[dict[str, Any]]:
+    """Which agents have a real, runnable benchmark right now, and which
+    don't (with why) - lets the frontend render every agent honestly
+    instead of only listing the ones that work.
+    """
+    return AGENT_METRICS_STATUS
+
+
+@app.post("/api/v1/metrics/document-ingestion")
+async def document_ingestion_metrics() -> dict[str, Any]:
+    """Runs the real Document Ingestion Agent against this project's own
+    bundled demo scenarios and returns the metrics report. Takes a few
+    seconds (real PDF generation + OCR/parsing) - POST because it does
+    real work, not a cached read.
+    """
+    from app.document_ingestion.benchmark import run_bundled_demo_benchmark
+
+    return run_bundled_demo_benchmark()
+
+
+@app.post("/api/v1/metrics/credit")
+async def credit_metrics() -> dict[str, Any]:
+    """CREDIT_METRICS.md Phase 1 report, computed live from every
+    application this server currently has stored.
+    """
+    from app.credit.benchmark import run_phase1_report
+
+    return run_phase1_report()

@@ -4,17 +4,18 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Activity, AlertCircle, ArrowLeft, ArrowRight, Check, Clock3, CreditCard, ExternalLink, FileCheck2,
   FileText, GitBranch, Home, Inbox, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Sparkles,
-  UploadCloud, X, Zap,
+  UploadCloud, X, Zap, type LucideIcon,
 } from 'lucide-react'
 import {
   documentUrl, formatInr, formatPct, formatSize, humanizeField, underwritingService,
-  type ApplicationView, type DemoScenario, type ParsedDocument, type ReviewItem, type Stage,
-  type VersionHistoryEntry,
+  type AgentMetricsStatus, type ApplicationView, type CreditPhase1Report, type DemoScenario,
+  type DecisionRuntimeMetrics, type DocumentIngestionMetricsReport, type ParsedDocument,
+  type ReviewItem, type Stage, type VersionHistoryEntry,
 } from '@/lib/underwriting-service'
 import { getDashboardMetrics } from '@/lib/dashboard-service'
 import { KeyValues, MetricBar, StatCard, StatusPill, stageTone, statusTone } from '@/components/ui-bits'
 
-export type View = 'dashboard' | 'applications' | 'new' | 'detail' | 'reports' | 'review' | 'final-report' | 'document-review'
+export type View = 'dashboard' | 'applications' | 'new' | 'detail' | 'reports' | 'review' | 'final-report' | 'document-review' | 'metrics'
 
 type Nav = { setView: (v: View) => void; open: (id: string) => void }
 
@@ -808,6 +809,204 @@ export function FinalReportView({ app, setView }: { app: ApplicationView | null;
         <div><h3>Audit trail</h3><p className="muted">Every agent output is retained with this report.</p></div>
         <div className="audit-steps"><span><strong>5</strong> agents evaluated</span><span><strong>{Object.keys(app.agents.compliance.rule_status ?? {}).length}</strong> policy checks</span><span><strong>{app.documents.length}</strong> documents</span><span><strong>{(app.agents.compliance.critical_flags ?? []).length}</strong> critical flags</span></div>
       </section>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------ agent metrics */
+// Lets a reviewer run (or re-run) each agent's real evaluation benchmark and
+// see the result, instead of only ever reading it from a markdown file.
+// Agents without a real, labeled benchmark yet say so plainly rather than
+// showing a fabricated number - see backend AGENT_METRICS_STATUS.
+
+const METRICS_AGENT_ICONS: Record<string, { icon: LucideIcon; tone: string }> = {
+  document_ingestion: { icon: FileText, tone: 'blue' },
+  credit: { icon: CreditCard, tone: 'green' },
+  property: { icon: Home, tone: 'blue' },
+  compliance: { icon: ShieldCheck, tone: 'amber' },
+  decision: { icon: Sparkles, tone: 'blue' },
+}
+
+function DocumentIngestionMetricsPanel({ report }: { report: DocumentIngestionMetricsReport }) {
+  const cls = report.classification
+  const cal = report.calibration
+  const recon = report.reconciliation
+  const ops = report.operational
+  return (
+    <div className="metrics-report">
+      <div className="stats-grid metrics-stats-grid">
+        <StatCard label="Classification accuracy" value={formatPct(cls.accuracy)} detail={`${report.sample_size.documents} documents · ${report.sample_size.bundles} bundles`} icon={FileCheck2} tone="blue" />
+        <StatCard label="Cost-weighted error" value={report.cost_weighted_error.toFixed(4)} detail="0 is perfect" icon={Activity} tone="amber" />
+        <StatCard label="Brier score" value={cal.brier_score.toFixed(4)} detail="Confidence calibration · 0 is perfect" icon={Activity} tone="blue" />
+        <StatCard label="Gate-passing error rate" value={cal.gate_passing_error_rate.toFixed(4)} detail="Wrong cases that cleared the 0.85 gate" icon={AlertCircle} tone="amber" />
+        <StatCard label="Contradiction recall / precision" value={`${formatPct(recon.contradiction_recall)} / ${formatPct(recon.contradiction_precision)}`} detail={`${recon.detected_contradictions} of ${recon.total_actual_contradictions} caught`} icon={ShieldCheck} tone="green" />
+        <StatCard label="Contradiction handling accuracy" value={formatPct(recon.contradiction_handling_accuracy)} detail="Caught contradiction also routed correctly" icon={ShieldCheck} tone="green" />
+        <StatCard label="STP / HITL rate" value={`${formatPct(ops.straight_through_processing_rate)} / ${formatPct(ops.hitl_escalation_rate)}`} detail={`${ops.total_applications} bundles processed`} icon={Sparkles} tone="blue" />
+        <StatCard label="HITL routing accuracy" value={formatPct(report.per_bundle.filter((b) => b.hitl_decision_correct).length / Math.max(report.per_bundle.length, 1))} detail={`${report.per_bundle.filter((b) => b.hitl_decision_correct).length} of ${report.per_bundle.length} bundles routed correctly`} icon={Check} tone="green" />
+      </div>
+      <div className="panel metrics-subpanel">
+        <h4>Per-bundle results</h4>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Bundle</th><th>Docs</th><th>Confidence</th><th>HITL (actual / expected)</th><th>Contradictions</th><th>Missing docs</th></tr></thead>
+            <tbody>
+              {report.per_bundle.map((b) => (
+                <tr key={b.bundle}>
+                  <td>{b.bundle.replace(/_/g, ' ')}</td>
+                  <td>{b.documents}</td>
+                  <td>{formatPct(b.overall_confidence)} ({b.confidence_level})</td>
+                  <td><StatusPill tone={b.hitl_decision_correct ? 'green' : 'amber'}>{b.requires_human_review ? 'Review' : 'Auto'} / {b.expected_hitl ? 'Review' : 'Auto'}</StatusPill></td>
+                  <td>{b.contradictions_detected}</td>
+                  <td>{b.missing_mandatory_documents.length ? b.missing_mandatory_documents.join(', ') : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="panel metrics-subpanel">
+        <h4>Field-level checks (clean-prime bundle)</h4>
+        <KeyValues rows={Object.entries(report.field_level_checks_clean_prime).map(([k, v]) => [humanizeField(k), v.toFixed(2)])} />
+      </div>
+    </div>
+  )
+}
+
+function DecisionMetricsPanel({ report }: { report: DecisionRuntimeMetrics }) {
+  if (report.n_decisions === 0) {
+    return <div className="panel empty-state"><Sparkles size={22} /><strong>No decisions audited yet</strong><span>This fills in as applications run through the pipeline - submit or rerun an application, then come back.</span></div>
+  }
+  return (
+    <div className="metrics-report">
+      <div className="stats-grid metrics-stats-grid">
+        <StatCard label="Decisions audited" value={String(report.n_decisions)} detail={Object.entries(report.decision_distribution).map(([k, v]) => `${k}: ${v}`).join(' · ')} icon={FileCheck2} tone="blue" />
+        <StatCard label="Suspend rate" value={formatPct(report.suspend_rate)} detail="Share routed to human review" icon={ShieldCheck} tone="amber" />
+        <StatCard label="Auto-decision rate" value={formatPct(report.auto_decision_rate)} detail="Share resolved without review" icon={Sparkles} tone="green" />
+        <StatCard label="Mean confidence" value={formatPct(report.mean_confidence)} detail={`${formatPct(report.below_threshold_rate)} below the 0.85 threshold`} icon={Activity} tone="blue" />
+      </div>
+      {Object.keys(report.gate_trigger_counts).length > 0 && (
+        <div className="panel metrics-subpanel">
+          <h4>Safety gate triggers</h4>
+          <KeyValues rows={Object.entries(report.gate_trigger_counts).map(([k, v]) => [k.replace(/_/g, ' '), String(v)])} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CreditMetricsPanel({ report }: { report: CreditPhase1Report }) {
+  if (!report.available) {
+    return <div className="panel empty-state"><CreditCard size={22} /><strong>Nothing to measure yet</strong><span>{report.reason}</span></div>
+  }
+  const bureau = report.bureau_source_mix!
+  const decisions = report.decision_distribution!
+  const flags = report.flag_trigger_rates!
+  const agreement = report.agreement_matrix!
+  const quality = report.upstream_data_quality_rate!
+  const air = report.adverse_impact_ratio?.favourable_approve
+  return (
+    <div className="metrics-report">
+      {bureau.unverified_share_pct > 0 && (
+        <div className="hard-gate-banner" style={{ marginBottom: 16 }}>
+          <AlertCircle size={18} />
+          <div><strong>Read the bureau-source mix first</strong><span>{bureau.unverified_share_pct}% of applications used simulated or declared data, not a real bureau - most other numbers here measure the stub, not real credit risk.</span></div>
+        </div>
+      )}
+      <div className="stats-grid metrics-stats-grid">
+        <StatCard label="Applications measured" value={String(report.n_applications)} detail={`${bureau.sources.demo_fixture?.count ?? 0} demo · ${bureau.sources.bureau?.count ?? 0} real bureau`} icon={FileCheck2} tone="blue" />
+        <StatCard label="Unverified bureau share" value={formatPct(bureau.unverified_share_pct / 100)} detail={bureau.meets_production_target ? 'No simulated data' : `${bureau.simulated_share_pct}% simulated`} icon={AlertCircle} tone={bureau.meets_production_target ? 'green' : 'amber'} />
+        <StatCard label="Credit vs Decision agreement" value={formatPct(agreement.agreement_rate_pct / 100)} detail={`${agreement.severe_conflicts.length} severe conflict(s)`} icon={Sparkles} tone={agreement.severe_conflicts.length ? 'amber' : 'green'} />
+        <StatCard label="Upstream data-quality rate" value={formatPct(quality.rate_pct / 100)} detail={`${quality.reviewed} reviewed · ${quality.not_reviewed} not reviewed`} icon={FileText} tone="blue" />
+        {air && <StatCard label="Adverse impact ratio (approve)" value={air.air === null ? '—' : air.air.toFixed(2)} detail={air.status.replace(/_/g, ' ')} icon={ShieldCheck} tone={air.flagged ? 'amber' : 'green'} />}
+      </div>
+      <div className="panel metrics-subpanel">
+        <h4>Decision distribution (Credit Agent preliminary call)</h4>
+        <KeyValues rows={Object.entries(decisions.decisions).map(([k, v]) => [k, `${v.count} (${v.pct}%)`])} />
+      </div>
+      <div className="panel metrics-subpanel">
+        <h4>Red-flag trigger rates</h4>
+        <KeyValues rows={Object.entries(flags.flags).map(([k, v]) => [k.replace(/_/g, ' '), `${v.count} (${v.pct}%)`])} />
+      </div>
+      {agreement.severe_conflicts.length > 0 && (
+        <div className="panel metrics-subpanel">
+          <h4>Severe conflicts (Credit APPROVE vs Decision DENY, or reverse)</h4>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Application</th><th>Credit Agent</th><th>Decision Agent</th></tr></thead>
+              <tbody>{agreement.severe_conflicts.map((c) => <tr key={c.application_id}><td>{c.application_id}</td><td>{c.credit}</td><td>{c.decision}</td></tr>)}</tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [docReport, setDocReport] = useState<DocumentIngestionMetricsReport | null>(null)
+  const [decisionReport, setDecisionReport] = useState<DecisionRuntimeMetrics | null>(null)
+  const [creditReport, setCreditReport] = useState<CreditPhase1Report | null>(null)
+  const meta = METRICS_AGENT_ICONS[status.agent] ?? { icon: Activity, tone: 'blue' }
+
+  const run = async () => {
+    setLoading(true); setError('')
+    try {
+      if (status.agent === 'document_ingestion') setDocReport(await underwritingService.runDocumentIngestionMetrics())
+      else if (status.agent === 'decision') setDecisionReport(await underwritingService.getDecisionRuntimeMetrics())
+      else if (status.agent === 'credit') setCreditReport(await underwritingService.runCreditMetrics())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not run this benchmark.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const hasResult = docReport || decisionReport || creditReport
+
+  return (
+    <article className="panel metrics-agent-card" data-testid={`metrics-${status.agent}`}>
+      <div className="agent-card-top">
+        <span className={`agent-icon ${meta.tone}`}><meta.icon size={20} /></span>
+        <StatusPill tone={status.status === 'runnable' ? 'green' : 'slate'}>{status.status === 'runnable' ? 'Runnable' : 'Not available yet'}</StatusPill>
+      </div>
+      <h3>{status.label}</h3>
+      <p className="agent-summary">{status.description}</p>
+      {status.status === 'runnable' && (
+        <button className="secondary-button report-button" onClick={run} disabled={loading}>
+          {loading ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
+          {loading ? 'Running…' : hasResult ? 'Run again' : 'Run benchmark'}
+        </button>
+      )}
+      {error && <div className="form-error" role="alert">{error}</div>}
+      {docReport && <DocumentIngestionMetricsPanel report={docReport} />}
+      {decisionReport && <DecisionMetricsPanel report={decisionReport} />}
+      {creditReport && <CreditMetricsPanel report={creditReport} />}
+    </article>
+  )
+}
+
+export function AgentMetrics({ setView }: { setView: (v: View) => void }) {
+  const [statuses, setStatuses] = useState<AgentMetricsStatus[] | null>(null)
+  const [loadError, setLoadError] = useState('')
+  useEffect(() => {
+    underwritingService.getAgentMetricsOverview().then(setStatuses).catch(() => setLoadError('Cannot reach the underwriting backend.'))
+  }, [])
+
+  if (loadError) return <div className="page-content"><div className="form-error" role="alert">{loadError}</div></div>
+  if (statuses === null) return <div className="page-content"><div className="panel loading-state">Loading agent metrics…</div></div>
+
+  const runnable = statuses.filter((s) => s.status === 'runnable').length
+  return (
+    <div className="page-content metrics-page">
+      <div className="page-intro">
+        <div><p className="section-kicker">Evaluation</p><h2>Agent metrics</h2><p className="muted">Run each agent&apos;s real evaluation benchmark and see the result - no fabricated numbers, and agents without a real benchmark yet say so.</p></div>
+        <StatusPill tone="blue">{runnable} of {statuses.length} runnable</StatusPill>
+      </div>
+      <div className="metrics-agent-grid">
+        {statuses.map((s) => <AgentMetricCard key={s.agent} status={s} />)}
+      </div>
     </div>
   )
 }
