@@ -1,0 +1,7 @@
+source_id,authority,title,relevance,link,verification_status
+SRC-01,Reserve Bank of India,"Master Direction – Know Your Customer (KYC) Direction, 2016 and amendments",KYC/customer due diligence framework,https://www.rbi.org.in/Scripts/BS_ViewMasDirections.aspx?id=11566,Verify latest consolidated amendments and exact clauses.
+SRC-02,Enforcement Directorate / Government of India,PMLA Act and Maintenance of Records Rules resources,PMLA/AML framework,https://enforcementdirectorate.gov.in/,Confirm applicable regulated-entity obligations with compliance owner.
+SRC-03,India Code / Government of India,"Real Estate (Regulation and Development) Act, 2016",RERA registration framework,https://www.indiacode.nic.in/,State-specific rules/applicability require verification.
+SRC-04,Reserve Bank of India,"Priority Sector Lending Directions, 2025",PSL classification and housing loan conditions,https://www.rbi.org.in/Scripts/NotificationUser.aspx/NotificationUser.aspx?Id=12799,Verify relevant housing paragraphs; current project thresholds are placeholders.
+SRC-05,Reserve Bank of India,FAQs on Priority Sector Lending,Interpretive PSL clarification,https://rbi.org.in/scripts/faqview.aspx?id=87,Use with current Directions; not enough to validate project placeholder ceilings.
+SRC-06,Project repository,"Compliance README, config, rules_engine and individual rule modules","Implemented behavior, severities and input mapping",https://github.com/AFA-interns/Mortgage-Underwriting-System/tree/saurav-compliance,Compare exact branch/commit used by Saurav.

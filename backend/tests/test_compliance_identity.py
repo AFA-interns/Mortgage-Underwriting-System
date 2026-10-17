@@ -58,3 +58,25 @@ def test_missing_data_is_not_a_mismatch():
     status, flags = check_identity_consistency({"identity": {}}, CONFIG)
     assert status == "PASS"
     assert flags == []
+
+
+def test_pan_case_and_whitespace_is_not_a_mismatch():
+    from app.compliance.identity_consistency import check_identity_consistency
+    data = {"identity": {"application_form_pan_number": "abcde1234f ", "pan_card_number": "ABCDE1234F"}}
+    status, flags = check_identity_consistency(data, {})
+    assert status == "PASS" and flags == []
+
+
+def test_dob_format_difference_is_not_a_mismatch():
+    from app.compliance.identity_consistency import check_identity_consistency
+    data = {"identity": {"application_form_dob": "15/08/1990", "aadhaar_dob": "1990-08-15"}}
+    status, flags = check_identity_consistency(data, {})
+    assert status == "PASS" and flags == []
+
+
+def test_real_pan_and_dob_differences_still_flag():
+    from app.compliance.identity_consistency import check_identity_consistency
+    data = {"identity": {"application_form_pan_number": "ABCDE1234F", "pan_card_number": "ABCDE1234G",
+                         "application_form_dob": "15/08/1990", "aadhaar_dob": "16/08/1990"}}
+    _, flags = check_identity_consistency(data, {})
+    assert {f.code for f in flags} == {"IDENTITY_MISMATCH_PAN", "IDENTITY_MISMATCH_DOB"}

@@ -1,0 +1,14 @@
+type,metric,formula,data,proposed_target,notes
+Compliance,KYC critical-defect recall,TP/(TP+FN) for KYC_INCOMPLETE,Golden KYC cases,100% on deterministic golden set,"Engineering target, not legal threshold."
+Compliance,Name mismatch detection quality,"Precision, recall, F1 on labelled name pairs",60 synthetic name pairs and identity fields,"Provisional: recall ≥95%, precision ≥90%",Threshold 90; missing names currently may be treated as matching. Review borderline labels.
+Compliance,DOB/PAN identity mismatch detection,Recall per flag code; exact flag-code match,DOB and PAN input fields,DOB ≥95%; PAN 100% on golden set,"Current notes: DOB HIGH, PAN mismatch CRITICAL."
+Compliance,PMLA source-of-funds check,Recall for PMLA_SOURCE_OF_FUNDS_MISSING,Synthetic PMLA declaration field,100% on deterministic set,Confirm exact legal/policy obligation with compliance owner.
+Compliance,PMLA identity-log check,Recall for PMLA_IDENTITY_LOG_MISSING,Synthetic identity-log field,100% on deterministic set,Current notes classify it as MEDIUM.
+Compliance,Protected-attribute guard,Recall on configured protected keys; false positives on benign fields,raw_fields keys,100% configured-key detection; 0 benign false positives,"Current code checks keys, not values or adverse impact."
+Compliance,RERA applicability/registration,Recall for unregistered under-construction; false positives for completed property,Under-construction flag and RERA status,100% golden set; 0 completed-property false positives,Confirm state-specific applicability and status vocabulary.
+Compliance,NHB/PSL informational classification,Exact agreement with approved versioned policy table,"Loan amount, tier and boundary cases",Set target after thresholds are verified,Current project ceilings are placeholders; do not treat as legal limits.
+Prototype,Critical-flag aggregation exact-set accuracy,Exact expected-vs-actual critical flag set / all cases,Golden dataset and ComplianceAnalysisResult,100% deterministic rule cases,"Compare exact flag codes, not only counts."
+Prototype,Rule-status agreement,Correct PASS/WARNING/FAIL / all cases,Golden expected_rule_status vs rule output,100% deterministic rule cases,Separate from decision-gate PASS/SUSPEND.
+Prototype,Decision-gate agreement,Correct PASS/SUSPEND / all cases,Expected status vs Gate 1 output,100% deterministic cases,"Per task description, critical flags suspend."
+Prototype,Confidence formula conformance,"Compare against max(0.30, base−0.15×critical−0.05×warning), capped at 1",Flags and config weights,100% within 0.0001,"Formula conformance only, not creditworthiness."
+Prototype,Schema robustness and explanation fidelity,Schema-valid outputs; human review of explanation factuality,Missing/null/empty inputs and 20 reviewed explanations,100% schema-valid; zero contradictions in reviewed sample,LLM must not change rule_status or critical_flags.
