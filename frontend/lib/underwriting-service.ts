@@ -229,6 +229,39 @@ export type PropertyCoverageReport = {
   }
 }
 
+// Compliance Agent metrics - deterministic rule engine run against a
+// bundled, hand-labeled golden set (120 cases) and a name-matching set (60
+// pairs). No stored applications or outcome labels needed, unlike the
+// credit/property/decision metrics.
+export type ComplianceMetricsReport = {
+  available: boolean
+  golden_set: {
+    sample_size: number
+    summary: Record<'codes_ok' | 'crit_ok' | 'rule_ok' | 'gate_ok' | 'conf_ok' | 'det_ok', { passed: number; total: number; pct: number }>
+    mismatches: Array<{
+      id: string
+      expected_codes: string[]
+      expected_rule: string
+      expected_gate: string
+      got_codes: string[]
+      got_rule: string
+      got_gate: string
+      tags: string
+    }>
+    per_flag: Array<{ code: string; tp: number; fn: number; fp: number; precision: number | null; recall: number | null }>
+  }
+  name_matcher: {
+    sample_size: number
+    threshold: number
+    confusion: { tp: number; fn: number; fp: number; tn: number }
+    precision: number | null
+    recall: number | null
+    f1: number | null
+    misses: Array<{ pair_id: string; kind: 'false_alarm' | 'missed_mismatch'; name_a: string; name_b: string; pattern: string; score: number }>
+    threshold_sweep: Array<{ threshold: number; precision: number | null; recall: number | null; fp: number; fn: number }>
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
   if (!res.ok) {
@@ -277,6 +310,8 @@ export const underwritingService = {
   runCreditMetrics: () => request<CreditPhase1Report>('/api/v1/metrics/credit', { method: 'POST' }),
   /** PROPERTY_VALUATION_METRICS.md Coverage Rate, computed live from every stored application. */
   runPropertyMetrics: () => request<PropertyCoverageReport>('/api/v1/metrics/property', { method: 'POST' }),
+  /** Runs the real Compliance Agent against its bundled golden set and name-matching set. Deterministic, no stored applications needed. */
+  runComplianceMetrics: () => request<ComplianceMetricsReport>('/api/v1/metrics/compliance', { method: 'POST' }),
 }
 
 export const documentUrl = (applicationId: string, docId: string): string =>

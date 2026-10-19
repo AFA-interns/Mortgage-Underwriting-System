@@ -8,6 +8,7 @@ purpose.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from rapidfuzz import fuzz
@@ -15,6 +16,25 @@ from rapidfuzz import fuzz
 from app.models.decision import Severity
 
 from .flags import RuleFlag
+
+
+_DOB_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d %b %Y", "%d %B %Y")
+
+
+def _normalize_pan(value: str) -> str:
+    """PAN is case-insensitive and often typed with stray spaces."""
+    return "".join(value.split()).upper()
+
+
+def _normalize_dob(value: str) -> str:
+    """Parse common Indian date formats to ISO; fall back to stripped text."""
+    text = value.strip()
+    for fmt in _DOB_FORMATS:
+        try:
+            return datetime.strptime(text, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return text
 
 
 def _names_match(a: str | None, b: str | None, threshold: int) -> bool:
@@ -55,7 +75,7 @@ def check_identity_consistency(
 
     dob_form = identity.get("application_form_dob")
     dob_aadhaar = identity.get("aadhaar_dob")
-    if dob_form and dob_aadhaar and dob_form != dob_aadhaar:
+    if dob_form and dob_aadhaar and _normalize_dob(dob_form) != _normalize_dob(dob_aadhaar):
         flags.append(
             RuleFlag(
                 code="IDENTITY_MISMATCH_DOB",
@@ -69,7 +89,7 @@ def check_identity_consistency(
 
     pan_form = identity.get("application_form_pan_number")
     pan_card = identity.get("pan_card_number")
-    if pan_form and pan_card and pan_form != pan_card:
+    if pan_form and pan_card and _normalize_pan(pan_form) != _normalize_pan(pan_card):
         flags.append(
             RuleFlag(
                 code="IDENTITY_MISMATCH_PAN",

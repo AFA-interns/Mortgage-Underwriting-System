@@ -670,10 +670,18 @@ AGENT_METRICS_STATUS: list[dict[str, Any]] = [
     {
         "agent": "compliance",
         "label": "Compliance Agent",
-        "status": "unavailable",
-        "description": "No evaluation framework exists yet for this agent.",
-        "endpoint": None,
-        "method": None,
+        "status": "runnable",
+        "description": (
+            "Runs the real rules engine against a bundled, hand-labeled "
+            "120-case golden set (KYC, identity, PMLA, RERA, NHB/PSL) and a "
+            "60-pair name-matching set, and reports recall/precision/F1 "
+            "plus rule-status, decision-gate, and confidence-formula "
+            "agreement - deterministic, so no stored applications or "
+            "outcome labels are needed. See compliance_eval/docs/"
+            "metrics_spec.csv for the metric definitions."
+        ),
+        "endpoint": "/api/v1/metrics/compliance",
+        "method": "POST",
     },
 ]
 
@@ -717,3 +725,15 @@ async def property_valuation_metrics() -> dict[str, Any]:
     from app.property_valuation.benchmark import run_coverage_report
 
     return run_coverage_report()
+
+
+@app.post("/api/v1/metrics/compliance")
+async def compliance_metrics() -> dict[str, Any]:
+    """Runs the real Compliance Agent against its bundled golden set and
+    name-matching set and returns the metrics report. Deterministic rule
+    engine - takes well under a second, but POST because it does real work,
+    not a cached read.
+    """
+    from app.compliance.benchmark import run_compliance_benchmark
+
+    return run_compliance_benchmark()

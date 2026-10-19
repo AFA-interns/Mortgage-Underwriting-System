@@ -1,0 +1,61 @@
+pair_id,name_a,name_b,label,pattern,synthetic_only
+NAME-001,Aven Rilora,Rilora Aven,same_person,reordered_tokens,True
+NAME-002,Mira Solvani,Mira Solvany,same_person,minor_spelling,True
+NAME-003,Ishan Verali,I. Verali,same_person,abbreviation,True
+NAME-004,Tara Mivani,Tara K Mivani,same_person,missing_middle,True
+NAME-005,Kiaan Roveli,Kiaan Roveli,same_person,exact,True
+NAME-006,Naira Veluno,Naira Veluno,same_person,exact,True
+NAME-007,Rehan Taviro,Rehan T Taviro,same_person,middle_initial,True
+NAME-008,Anaya Corvani,Anaya Corvani,same_person,exact,True
+NAME-009,Devik Maruno,Devik Maruno,same_person,exact,True
+NAME-010,Sia Navero,Sia Naverro,same_person,minor_spelling,True
+NAME-011,Yuvan Pelari,Yuvan Pelari,same_person,exact,True
+NAME-012,Ira Senavo,Ira S Senavo,same_person,middle_initial,True
+NAME-013,Oren Valmira,Valmira Oren,same_person,reordered_tokens,True
+NAME-014,Luma Ferani,Luma Ferani,same_person,exact,True
+NAME-015,Tovin Arvela,Tovin Arvela,same_person,exact,True
+NAME-016,Zira Melvano,Zira Melvanno,same_person,minor_spelling,True
+NAME-017,Pavin Orlesta,Pavin O Orlesta,same_person,middle_initial,True
+NAME-018,Nivra Soleno,Soleno Nivra,same_person,reordered_tokens,True
+NAME-019,Eshan Virelo,Eshan Virelo,same_person,exact,True
+NAME-020,Mavya Toreni,Mavya Toreni,same_person,exact,True
+NAME-021,Karel Dovira,Karel Dovira,same_person,exact,True
+NAME-022,Asha Venlori,Asha V Venlori,same_person,middle_initial,True
+NAME-023,Tarin Mivani,Tarin Mivani,same_person,exact,True
+NAME-024,Veya Corlani,Veya Corlani,same_person,exact,True
+NAME-025,Ruvan Pelori,Ruvan Pellori,same_person,minor_spelling,True
+NAME-026,Nemi Valtaro,Valtaro Nemi,same_person,reordered_tokens,True
+NAME-027,Soren Kaveli,Soren K Kaveli,same_person,middle_initial,True
+NAME-028,Ilaya Rovena,Ilaya Rovena,same_person,exact,True
+NAME-029,Jorin Navelo,Jorin Navelo,same_person,exact,True
+NAME-030,Evara Soltani,Evara Soltani,same_person,exact,True
+NAME-031,Aven Rilora,Aven Dorsali,different_person,surname,True
+NAME-032,Mira Solvani,Naira Veluno,different_person,different_person,True
+NAME-033,Ishan Verali,Ishan Verano,different_person,surname,True
+NAME-034,Tara Mivani,Tara Navero,different_person,surname,True
+NAME-035,Kiaan Roveli,Kiaan Pelari,different_person,surname,True
+NAME-036,Naira Veluno,Naira Corvani,different_person,surname,True
+NAME-037,Rehan Taviro,Rohan Taviro,different_person,given_name,True
+NAME-038,Anaya Corvani,Anaya Senavo,different_person,surname,True
+NAME-039,Devik Maruno,Davin Maruno,different_person,given_name,True
+NAME-040,Sia Navero,Sia Veluno,different_person,surname,True
+NAME-041,Yuvan Pelari,Yuvan Taviro,different_person,surname,True
+NAME-042,Ira Senavo,Ira Soleno,different_person,surname,True
+NAME-043,Oren Valmira,Orin Valmira,different_person,given_name,True
+NAME-044,Luma Ferani,Luma Toreni,different_person,surname,True
+NAME-045,Tovin Arvela,Tovin Dovira,different_person,surname,True
+NAME-046,Zira Melvano,Zara Melvano,different_person,given_name,True
+NAME-047,Pavin Orlesta,Pavin Navelo,different_person,surname,True
+NAME-048,Nivra Soleno,Nivra Senavo,different_person,surname,True
+NAME-049,Eshan Virelo,Ishan Virelo,different_person,given_name,True
+NAME-050,Mavya Toreni,Mavya Corlani,different_person,surname,True
+NAME-051,Karel Dovira,Karel Orlesta,different_person,surname,True
+NAME-052,Asha Venlori,Asha Melvano,different_person,surname,True
+NAME-053,Tarin Mivani,Tarin Solvani,different_person,surname,True
+NAME-054,Veya Corlani,Veya Ferani,different_person,surname,True
+NAME-055,Ruvan Pelori,Ruvan Navelo,different_person,surname,True
+NAME-056,Nemi Valtaro,Nemi Roveli,different_person,surname,True
+NAME-057,Soren Kaveli,Soren Verali,different_person,surname,True
+NAME-058,Ilaya Rovena,Ilaya Veluno,different_person,surname,True
+NAME-059,Jorin Navelo,Jorin Pelari,different_person,surname,True
+NAME-060,Evara Soltani,Evara Taviro,different_person,surname,True

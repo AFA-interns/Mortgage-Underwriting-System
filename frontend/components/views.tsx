@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import {
   documentUrl, formatInr, formatPct, formatSize, humanizeField, underwritingService,
-  type AgentMetricsStatus, type ApplicationView, type CreditPhase1Report, type DemoScenario,
+  type AgentMetricsStatus, type ApplicationView, type ComplianceMetricsReport, type CreditPhase1Report, type DemoScenario,
   type DecisionRuntimeMetrics, type DocumentIngestionMetricsReport, type ParsedDocument,
   type PropertyCoverageReport, type ReviewItem, type Stage, type VersionHistoryEntry,
 } from '@/lib/underwriting-service'
@@ -969,6 +969,78 @@ function PropertyMetricsPanel({ report }: { report: PropertyCoverageReport }) {
   )
 }
 
+function ComplianceMetricsPanel({ report }: { report: ComplianceMetricsReport }) {
+  if (!report.available) {
+    return <div className="panel empty-state"><ShieldCheck size={22} /><strong>Nothing to measure yet</strong></div>
+  }
+  const golden = report.golden_set
+  const names = report.name_matcher
+  const gate = golden.summary.gate_ok
+  const rule = golden.summary.rule_ok
+  return (
+    <div className="metrics-report">
+      <div className="stats-grid metrics-stats-grid">
+        <StatCard label="Golden set cases" value={String(golden.sample_size)} detail="Hand-labeled KYC/identity/PMLA/RERA/NHB cases" icon={FileCheck2} tone="blue" />
+        <StatCard label="Decision-gate agreement" value={`${gate.passed}/${gate.total}`} detail={`${gate.pct}% PASS/SUSPEND matched expected`} icon={ShieldCheck} tone={gate.pct === 100 ? 'green' : 'amber'} />
+        <StatCard label="Rule-status agreement" value={`${rule.passed}/${rule.total}`} detail={`${rule.pct}% PASS/WARNING/FAIL matched expected`} icon={FileCheck2} tone={rule.pct === 100 ? 'green' : 'amber'} />
+        <StatCard label="Name-matcher F1" value={names.f1 === null ? '—' : names.f1.toFixed(2)} detail={`precision ${names.precision === null ? '—' : names.precision.toFixed(2)} · recall ${names.recall === null ? '—' : names.recall.toFixed(2)} (${names.sample_size} pairs)`} icon={UsersRound} tone={names.misses.length ? 'amber' : 'green'} />
+      </div>
+      <div className="panel metrics-subpanel">
+        <h4>Per-flag recall / precision (golden set)</h4>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Flag</th><th>TP</th><th>FN</th><th>FP</th><th>Precision</th><th>Recall</th></tr></thead>
+            <tbody>
+              {golden.per_flag.map((f) => (
+                <tr key={f.code}>
+                  <td>{f.code.replace(/_/g, ' ')}</td><td>{f.tp}</td><td>{f.fn}</td><td>{f.fp}</td>
+                  <td>{f.precision === null ? '—' : formatPct(f.precision)}</td>
+                  <td>{f.recall === null ? '—' : formatPct(f.recall)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {golden.mismatches.length > 0 && (
+        <div className="panel metrics-subpanel">
+          <h4>Golden-set mismatches</h4>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Case</th><th>Expected gate</th><th>Got gate</th><th>Expected codes</th><th>Got codes</th></tr></thead>
+              <tbody>
+                {golden.mismatches.map((m) => (
+                  <tr key={m.id}>
+                    <td>{m.id}</td><td>{m.expected_gate}</td><td>{m.got_gate}</td>
+                    <td>{m.expected_codes.join(', ') || '—'}</td><td>{m.got_codes.join(', ') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {names.misses.length > 0 && (
+        <div className="panel metrics-subpanel">
+          <h4>Name-matcher misses (threshold {names.threshold})</h4>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Pair</th><th>Kind</th><th>Name A</th><th>Name B</th><th>Score</th></tr></thead>
+              <tbody>
+                {names.misses.map((mm) => (
+                  <tr key={mm.pair_id}>
+                    <td>{mm.pair_id}</td><td>{mm.kind.replace(/_/g, ' ')}</td><td>{mm.name_a}</td><td>{mm.name_b}</td><td>{mm.score.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -976,6 +1048,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
   const [decisionReport, setDecisionReport] = useState<DecisionRuntimeMetrics | null>(null)
   const [creditReport, setCreditReport] = useState<CreditPhase1Report | null>(null)
   const [propertyReport, setPropertyReport] = useState<PropertyCoverageReport | null>(null)
+  const [complianceReport, setComplianceReport] = useState<ComplianceMetricsReport | null>(null)
   const meta = METRICS_AGENT_ICONS[status.agent] ?? { icon: Activity, tone: 'blue' }
 
   const run = async () => {
@@ -985,6 +1058,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
       else if (status.agent === 'decision') setDecisionReport(await underwritingService.getDecisionRuntimeMetrics())
       else if (status.agent === 'credit') setCreditReport(await underwritingService.runCreditMetrics())
       else if (status.agent === 'property') setPropertyReport(await underwritingService.runPropertyMetrics())
+      else if (status.agent === 'compliance') setComplianceReport(await underwritingService.runComplianceMetrics())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not run this benchmark.')
     } finally {
@@ -992,7 +1066,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
     }
   }
 
-  const hasResult = docReport || decisionReport || creditReport || propertyReport
+  const hasResult = docReport || decisionReport || creditReport || propertyReport || complianceReport
 
   return (
     <article className="panel metrics-agent-card" data-testid={`metrics-${status.agent}`}>
@@ -1013,6 +1087,7 @@ function AgentMetricCard({ status }: { status: AgentMetricsStatus }) {
       {decisionReport && <DecisionMetricsPanel report={decisionReport} />}
       {creditReport && <CreditMetricsPanel report={creditReport} />}
       {propertyReport && <PropertyMetricsPanel report={propertyReport} />}
+      {complianceReport && <ComplianceMetricsPanel report={complianceReport} />}
     </article>
   )
 }
