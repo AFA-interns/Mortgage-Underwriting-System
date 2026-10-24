@@ -49,6 +49,7 @@ Desktop.ini
 logs/
 .omo/
 backend/mock_documents/
+mock_documents/
 
 # Node / Next.js / Frontend
 node_modules

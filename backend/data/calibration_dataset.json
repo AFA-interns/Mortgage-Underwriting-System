@@ -1,0 +1,421 @@
+[
+  {
+    "application_id": "APP-CAL-001",
+    "borrower_name": "Aarav Sharma",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 800,
+    "monthly_income": 150000,
+    "loan_amount": 5000000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-001/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-002",
+    "borrower_name": "Sunita Rao",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 790,
+    "monthly_income": 220000,
+    "loan_amount": 7500000,
+    "property_value": 11000000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-002/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-003",
+    "borrower_name": "Rohan Mehra",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 765,
+    "monthly_income": 180000,
+    "loan_amount": 6000000,
+    "property_value": 9000000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-003/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-004",
+    "borrower_name": "Deepak Verma",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 780,
+    "monthly_income": 110000,
+    "loan_amount": 4000000,
+    "property_value": 6500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-004/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-005",
+    "borrower_name": "Pooja Nair",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 755,
+    "monthly_income": 95000,
+    "loan_amount": 3500000,
+    "property_value": 5500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-005/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-006",
+    "borrower_name": "Arjun Singhania",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 770,
+    "monthly_income": 140000,
+    "loan_amount": 5200000,
+    "property_value": 8000000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-006/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-007",
+    "borrower_name": "Kavita Iyer",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 760,
+    "monthly_income": 125000,
+    "loan_amount": 4800000,
+    "property_value": 7200000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-007/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-008",
+    "borrower_name": "Manish Gupta",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 750,
+    "monthly_income": 85000,
+    "loan_amount": 3200000,
+    "property_value": 5000000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-008/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-009",
+    "borrower_name": "Neha Deshmukh",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 795,
+    "monthly_income": 165000,
+    "loan_amount": 6200000,
+    "property_value": 9500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-009/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-010",
+    "borrower_name": "Vikramaditya Bose",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 775,
+    "monthly_income": 190000,
+    "loan_amount": 7000000,
+    "property_value": 10500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-010/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-011",
+    "borrower_name": "Priya Suresh Patel",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 765,
+    "monthly_income": 130000,
+    "loan_amount": 4500000,
+    "property_value": 7000000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-011/property_deed.pdf"
+    ],
+    "flaw_description": "Minor middle name initial variation"
+  },
+  {
+    "application_id": "APP-CAL-012",
+    "borrower_name": "Alok Nath Sharma",
+    "ground_truth_label": "PASS",
+    "expected_decision": "APPROVE",
+    "archetype": "Clean Prime Salaried",
+    "cibil": 758,
+    "monthly_income": 115000,
+    "loan_amount": 4200000,
+    "property_value": 6800000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-012/property_deed.pdf"
+    ],
+    "flaw_description": "None (clean matching profile)"
+  },
+  {
+    "application_id": "APP-CAL-013",
+    "borrower_name": "Rajesh Khanna",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 130000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-013/property_deed.pdf"
+    ],
+    "flaw_description": "Severe Name Discrepancy between PAN (Rajesh Khanna) and Aadhaar (Suresh Pillai)"
+  },
+  {
+    "application_id": "APP-CAL-014",
+    "borrower_name": "Amit Bhatia",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 120000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-014/property_deed.pdf"
+    ],
+    "flaw_description": "PAN format violation (invalid characters)"
+  },
+  {
+    "application_id": "APP-CAL-015",
+    "borrower_name": "Vikram Malhotra",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 160000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-015/property_deed.pdf"
+    ],
+    "flaw_description": "Income Mismatch: Payslip Net is INR 1,40,000 but Bank Statement shows only INR 35,000"
+  },
+  {
+    "application_id": "APP-CAL-016",
+    "borrower_name": "Rohit Sen",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 120000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-016/property_deed.pdf"
+    ],
+    "flaw_description": "Payslip Math Inconsistency: Gross 1,20,000 - Deductions 15,000 declared as Net 1,25,000"
+  },
+  {
+    "application_id": "APP-CAL-017",
+    "borrower_name": "Sameer Joshi",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 100000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/salary_slip_december_2025.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/salary_slip_january_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/salary_slip_february_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-017/property_deed.pdf"
+    ],
+    "flaw_description": "Payslip Recency Violation: Payslips are from 8, 9, 10 months ago"
+  },
+  {
+    "application_id": "APP-CAL-018",
+    "borrower_name": "Rahul Verma",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 90000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-018/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-018/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-018/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-018/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-018/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-018/property_deed.pdf"
+    ],
+    "flaw_description": "Missing Mandatory Document: Bank Statement completely omitted"
+  },
+  {
+    "application_id": "APP-CAL-019",
+    "borrower_name": "Sanjay Kapoor",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 145000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-019/property_deed.pdf"
+    ],
+    "flaw_description": "Banking Default Behavior: 4 inward ECS bounces detected in 6 months"
+  },
+  {
+    "application_id": "APP-CAL-020",
+    "borrower_name": "Tarun Roy",
+    "ground_truth_label": "FAIL",
+    "expected_decision": "SUSPEND",
+    "archetype": "Flawed Application",
+    "cibil": 680,
+    "monthly_income": 170000,
+    "loan_amount": 4500000,
+    "property_value": 7500000,
+    "document_paths": [
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/pan_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/aadhaar_card.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/salary_slip_august_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/salary_slip_september_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/salary_slip_october_2026.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/bank_statement_6m.pdf",
+      "/Users/yash/Desktop/codes/propery-valuation-agent/backend/mock_documents/calibration_dataset/APP-CAL-020/property_deed.pdf"
+    ],
+    "flaw_description": "Compliance Violation: Under-construction property has unverified/missing RERA registration"
+  }
+]
