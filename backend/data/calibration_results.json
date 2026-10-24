@@ -699,7 +699,7 @@
         "Contradiction flagged: Name mismatch between Aadhaar Card and Salary Slip: 'Priya S Patel' vs 'Priya Suresh Patel' (Similarity: 78%)",
         "Contradiction flagged: Name mismatch between Aadhaar Card and Bank Statement: 'Priya S Patel' vs 'Priya Suresh Patel' (Similarity: 78%)",
         "Contradiction flagged: Name mismatch between Aadhaar Card and Property Deed: 'Priya S Patel' vs 'Priya Suresh Patel' (Similarity: 78%)",
-        "Overall extraction confidence (79.2%) is below 85% threshold."
+        "Overall extraction confidence (79.2%) is below 80% threshold."
       ],
       "flaw": "Minor middle name initial variation"
     },
@@ -737,7 +737,7 @@
         "Contradiction flagged: Name mismatch between Aadhaar Card and Salary Slip: 'Suresh Pillai' vs 'Rajesh Khanna' (Similarity: 15%)",
         "Contradiction flagged: Name mismatch between Aadhaar Card and Bank Statement: 'Suresh Pillai' vs 'Rajesh Khanna' (Similarity: 15%)",
         "Contradiction flagged: Name mismatch between Aadhaar Card and Property Deed: 'Suresh Pillai' vs 'Rajesh Khanna' (Similarity: 15%)",
-        "Overall extraction confidence (71.8%) is below 85% threshold."
+        "Overall extraction confidence (71.8%) is below 80% threshold."
       ],
       "flaw": "Severe Name Discrepancy between PAN (Rajesh Khanna) and Aadhaar (Suresh Pillai)"
     },
@@ -775,8 +775,7 @@
       "reasons": [
         "Contradiction flagged: Income discrepancy in August 2026: Bank credit (\u0393\u00e9\u256335,000.00) differs significantly from Payslip Net (\u0393\u00e9\u2563140,000.00).",
         "Contradiction flagged: Income discrepancy in September 2026: Bank credit (\u0393\u00e9\u256335,000.00) differs significantly from Payslip Net (\u0393\u00e9\u2563140,000.00).",
-        "Contradiction flagged: Income discrepancy in October 2026: Bank credit (\u0393\u00e9\u256335,000.00) differs significantly from Payslip Net (\u0393\u00e9\u2563140,000.00).",
-        "Overall extraction confidence (84.1%) is below 85% threshold."
+        "Contradiction flagged: Income discrepancy in October 2026: Bank credit (\u0393\u00e9\u256335,000.00) differs significantly from Payslip Net (\u0393\u00e9\u2563140,000.00)."
       ],
       "flaw": "Income Mismatch: Payslip Net is INR 1,40,000 but Bank Statement shows only INR 35,000"
     },
@@ -800,7 +799,7 @@
         "Payslip #1 (August 2026) arithmetic inconsistency between Gross, Deductions, and Net pay.",
         "Payslip #2 (September 2026) arithmetic inconsistency between Gross, Deductions, and Net pay.",
         "Payslip #3 (October 2026) arithmetic inconsistency between Gross, Deductions, and Net pay.",
-        "Overall extraction confidence (69.1%) is below 85% threshold."
+        "Overall extraction confidence (69.1%) is below 80% threshold."
       ],
       "flaw": "Payslip Math Inconsistency: Gross 1,20,000 - Deductions 15,000 declared as Net 1,25,000"
     },

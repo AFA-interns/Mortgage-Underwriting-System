@@ -88,6 +88,7 @@ class RuntimeMetrics(BaseModel):
     auto_decision_rate: float = 0.0
     mean_confidence: float = 0.0
     below_threshold_rate: float = 0.0
+    confidence_threshold: float = 0.85
     gate_trigger_counts: dict[str, int] = Field(default_factory=dict)
     crew_agreement_rate: float | None = None
 

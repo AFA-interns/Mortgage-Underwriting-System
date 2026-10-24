@@ -97,7 +97,7 @@ def calculate_confidence(
 
     # Determine threshold
     decision_config = config.get("decision", {})
-    min_confidence = decision_config.get("minimum_confidence", 0.85)
+    min_confidence = decision_config.get("minimum_confidence", 0.80)
     below_threshold = score < min_confidence
 
     reasoning_parts = []

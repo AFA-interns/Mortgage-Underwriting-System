@@ -280,7 +280,7 @@ def compute_ece(
 def compute_gate_passing_error_rate(
     confidences: List[float],
     correctness: List[int],
-    threshold: float = 0.85
+    threshold: float = 0.80
 ) -> float:
     """Of the cases confident enough to clear the auto-proceed gate
     (confidence >= threshold), the share that were actually wrong. This is
@@ -369,11 +369,18 @@ def compute_reconciliation_metrics(
 # 7. Operational / Runtime Health Metrics
 # -----------------------------------------------------------------------------
 
-def compute_operational_metrics(audit_records: List[Dict[str, Any]]) -> Dict[str, Any]:
+def compute_operational_metrics(audit_records: List[Dict[str, Any]], threshold: float | None = None) -> Dict[str, Any]:
     """Computes runtime service-level metrics from audit trail logs."""
     total_applications = len(audit_records)
     if total_applications == 0:
         return {}
+
+    if threshold is None:
+        try:
+            from app.document_ingestion.config import get_document_ingestion_config
+            threshold = float(get_document_ingestion_config().get("confidence", {}).get("minimum_confidence", 0.80))
+        except Exception:
+            threshold = 0.80
 
     hitl_count = sum(1 for r in audit_records if r.get("requires_human_review", False))
     stp_count = total_applications - hitl_count
@@ -382,7 +389,7 @@ def compute_operational_metrics(audit_records: List[Dict[str, Any]]) -> Dict[str
 
     confidences = [r.get("overall_confidence", 0.0) for r in audit_records]
     mean_conf = round(sum(confidences) / total_applications, 4)
-    below_threshold_count = sum(1 for c in confidences if c < 0.85)
+    below_threshold_count = sum(1 for c in confidences if c < threshold)
     below_threshold_rate = round(below_threshold_count / total_applications, 4)
 
     gate_counts = defaultdict(int)
@@ -397,6 +404,8 @@ def compute_operational_metrics(audit_records: List[Dict[str, Any]]) -> Dict[str
                 gate_counts["income_discrepancy"] += 1
             elif "arithmetic inconsistency" in reason:
                 gate_counts["salary_arithmetic_failure"] += 1
+            elif "below" in reason.lower() and "threshold" in reason.lower():
+                gate_counts["low_confidence_gate"] += 1
             elif "below 85%" in reason:
                 gate_counts["low_confidence_gate"] += 1
             elif "bounce" in reason:
@@ -408,5 +417,6 @@ def compute_operational_metrics(audit_records: List[Dict[str, Any]]) -> Dict[str
         "hitl_escalation_rate": hitl_rate,
         "mean_confidence": mean_conf,
         "below_threshold_rate": below_threshold_rate,
+        "confidence_threshold": threshold,
         "safety_gate_triggers": dict(gate_counts),
     }

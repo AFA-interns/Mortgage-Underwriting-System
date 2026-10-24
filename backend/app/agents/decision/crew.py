@@ -83,6 +83,15 @@ def _build_case_summary(
     return "\n".join(parts)
 
 
+def _get_min_confidence() -> float:
+    try:
+        from app.decision.finalizer import _load_config
+        cfg = _load_config()
+        return float(cfg.get("decision", {}).get("minimum_confidence", 0.85))
+    except Exception:
+        return 0.85
+
+
 def _deterministic_recommendation(
     risk_score: float,
     confidence: float,
@@ -93,10 +102,11 @@ def _deterministic_recommendation(
     if compliance_critical:
         return DecisionType.SUSPEND, 0.95
 
-    if risk_score >= 80 and confidence >= 0.85:
+    min_conf = _get_min_confidence()
+    if risk_score >= 80 and confidence >= min_conf:
         return DecisionType.APPROVE, 0.9
-    elif risk_score <= 40 and confidence >= 0.85:
-        return DecisionType.DENY, 0.85
+    elif risk_score <= 40 and confidence >= min_conf:
+        return DecisionType.DENY, min_conf
     else:
         return DecisionType.SUSPEND, 0.7
 
@@ -222,15 +232,16 @@ def _create_report_writer_output(
     critical_compliance = len(case.get("compliance_analysis", {}).get("critical_flags", [])) > 0
 
     # Report writer aligns with the final decision logic
+    min_conf = _get_min_confidence()
     if critical_compliance:
         rec = DecisionType.SUSPEND
         conf_level = 0.95
-    elif risk_score >= 80 and conf >= 0.85:
+    elif risk_score >= 80 and conf >= min_conf:
         rec = DecisionType.APPROVE
         conf_level = 0.9
-    elif risk_score <= 40 and conf >= 0.85:
+    elif risk_score <= 40 and conf >= min_conf:
         rec = DecisionType.DENY
-        conf_level = 0.85
+        conf_level = min_conf
     else:
         rec = DecisionType.SUSPEND
         conf_level = 0.8

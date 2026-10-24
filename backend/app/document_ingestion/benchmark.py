@@ -10,6 +10,7 @@ Shared by scripts/document_ingestion_metrics_report.py (CLI) and the
 from __future__ import annotations
 
 from app.document_ingestion.agent import DocumentIngestionAgent
+from app.document_ingestion.config import get_document_ingestion_config
 from app.document_ingestion.metrics import (
     compute_brier_score,
     compute_classification_metrics,
@@ -162,7 +163,8 @@ def run_bundled_demo_benchmark() -> dict:
         "calibration": {
             "brier_score": compute_brier_score(confidences, correctness),
             **dict(zip(("ece", "reliability_bins"), compute_ece(confidences, correctness, num_bins=5))),
-            "gate_passing_error_rate": compute_gate_passing_error_rate(confidences, correctness, threshold=0.85),
+            "gate_passing_error_rate": compute_gate_passing_error_rate(confidences, correctness, threshold=get_document_ingestion_config().get("confidence", {}).get("minimum_confidence", 0.80)),
+            "gate_threshold": get_document_ingestion_config().get("confidence", {}).get("minimum_confidence", 0.80),
         },
         "reconciliation": compute_reconciliation_metrics(recon_eval_cases),
         "operational": compute_operational_metrics(audit_records),

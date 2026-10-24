@@ -15,6 +15,9 @@ import yaml
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "document_ingestion_config.yaml"
 
 _DEFAULTS: dict[str, Any] = {
+    "confidence": {
+        "minimum_confidence": 0.80,
+    },
     "salary_slip": {
         "recency_window_months": 3,
     },

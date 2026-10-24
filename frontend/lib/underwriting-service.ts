@@ -109,7 +109,7 @@ export type DocumentIngestionMetricsReport = {
   sample_size: { bundles: number; documents: number }
   classification: { accuracy: number; balanced_accuracy: number; per_class: Record<string, any>; total_samples: number }
   cost_weighted_error: number
-  calibration: { brier_score: number; ece: number; gate_passing_error_rate: number; reliability_bins: Record<string, any>[] }
+  calibration: { brier_score: number; ece: number; gate_passing_error_rate: number; gate_threshold?: number; reliability_bins: Record<string, any>[] }
   reconciliation: {
     contradiction_recall: number
     contradiction_precision: number
@@ -126,6 +126,7 @@ export type DocumentIngestionMetricsReport = {
     hitl_escalation_rate: number
     mean_confidence: number
     below_threshold_rate: number
+    confidence_threshold?: number
     safety_gate_triggers: Record<string, number>
   }
   per_bundle: Array<{
@@ -149,6 +150,7 @@ export type DecisionRuntimeMetrics = {
   auto_decision_rate: number
   mean_confidence: number
   below_threshold_rate: number
+  confidence_threshold?: number
   gate_trigger_counts: Record<string, number>
   crew_agreement_rate: number | null
 }

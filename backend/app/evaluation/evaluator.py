@@ -9,6 +9,16 @@ from app.evaluation.metrics import (
 from app.evaluation.schemas import LabeledCase, MetricsReport, RuntimeMetrics
 from app.models.decision import DecisionResult
 
+
+def _get_default_confidence_threshold() -> float:
+    try:
+        from app.decision.finalizer import _load_config
+        cfg = _load_config()
+        return float(cfg.get("decision", {}).get("minimum_confidence", 0.85))
+    except Exception:
+        return 0.85
+
+
 DEFAULT_CONFIDENCE_THRESHOLD = 0.85
 
 
@@ -68,12 +78,15 @@ def evaluate_cases(
 
 def runtime_metrics_from_decisions(
     decisions: list[DecisionResult],
-    confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    confidence_threshold: float | None = None,
 ) -> RuntimeMetrics:
     """Operational metrics over a set of produced decisions (no labels needed)."""
+    if confidence_threshold is None:
+        confidence_threshold = _get_default_confidence_threshold()
+
     n = len(decisions)
     if n == 0:
-        return RuntimeMetrics()
+        return RuntimeMetrics(confidence_threshold=confidence_threshold)
 
     distribution: dict[str, int] = {}
     gate_counts: dict[str, int] = {}
@@ -105,6 +118,7 @@ def runtime_metrics_from_decisions(
         auto_decision_rate=round(1.0 - suspend_rate, 6),
         mean_confidence=round(mean_confidence, 6),
         below_threshold_rate=round(below_threshold, 6),
+        confidence_threshold=confidence_threshold,
         gate_trigger_counts=dict(sorted(gate_counts.items())),
         crew_agreement_rate=(
             round(agreement_hits / agreement_pairs, 6) if agreement_pairs else None

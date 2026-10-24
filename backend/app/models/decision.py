@@ -220,6 +220,7 @@ class DecisionResult(BaseModel):
     risk_score: float = Field(0.0, ge=0, le=100)
     risk_level: RiskLevel = RiskLevel.VERY_HIGH
     confidence: float = Field(0.0, ge=0, le=1)
+    minimum_confidence: float = Field(0.85, ge=0, le=1)
     key_positive_factors: list[str] = Field(default_factory=list)
     key_risk_factors: list[str] = Field(default_factory=list)
     compliance_status: str = "PENDING"

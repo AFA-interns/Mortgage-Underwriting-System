@@ -314,7 +314,7 @@ export function Detail({ app, setView, onReviewDocuments }: { app: ApplicationVi
         <div><span>Loan-to-value</span><strong>{formatPct(credit.ltv)}</strong></div>
         <div><span>Credit score</span><strong>{credit.cibil_score ?? '—'}</strong></div>
         <div><span>FOIR</span><strong>{formatPct(credit.foir)}</strong></div>
-        <div><span>Decision confidence</span><strong className={Number(d.confidence) >= 0.85 ? 'metric-green' : ''}>{formatPct(d.confidence)}</strong></div>
+        <div><span>Decision confidence</span><strong className={Number(d.confidence) >= (Number(d.minimum_confidence ?? d.confidence_threshold ?? 0.80)) ? 'metric-green' : ''}>{formatPct(d.confidence)}</strong></div>
       </div>
 
       <div className="workflow-heading">
@@ -838,7 +838,7 @@ function DocumentIngestionMetricsPanel({ report }: { report: DocumentIngestionMe
         <StatCard label="Classification accuracy" value={formatPct(cls.accuracy)} detail={`${report.sample_size.documents} documents · ${report.sample_size.bundles} bundles`} icon={FileCheck2} tone="blue" />
         <StatCard label="Cost-weighted error" value={report.cost_weighted_error.toFixed(4)} detail="0 is perfect" icon={Activity} tone="amber" />
         <StatCard label="Brier score" value={cal.brier_score.toFixed(4)} detail="Confidence calibration · 0 is perfect" icon={Activity} tone="blue" />
-        <StatCard label="Gate-passing error rate" value={cal.gate_passing_error_rate.toFixed(4)} detail="Wrong cases that cleared the 0.85 gate" icon={AlertCircle} tone="amber" />
+        <StatCard label="Gate-passing error rate" value={cal.gate_passing_error_rate.toFixed(4)} detail={`Wrong cases that cleared the ${formatPct(cal.gate_threshold ?? 0.80)} gate`} icon={AlertCircle} tone="amber" />
         <StatCard label="Contradiction recall / precision" value={`${formatPct(recon.contradiction_recall)} / ${formatPct(recon.contradiction_precision)}`} detail={`${recon.detected_contradictions} of ${recon.total_actual_contradictions} caught`} icon={ShieldCheck} tone="green" />
         <StatCard label="Contradiction handling accuracy" value={formatPct(recon.contradiction_handling_accuracy)} detail="Caught contradiction also routed correctly" icon={ShieldCheck} tone="green" />
         <StatCard label="STP / HITL rate" value={`${formatPct(ops.straight_through_processing_rate)} / ${formatPct(ops.hitl_escalation_rate)}`} detail={`${ops.total_applications} bundles processed`} icon={Sparkles} tone="blue" />
@@ -882,7 +882,7 @@ function DecisionMetricsPanel({ report }: { report: DecisionRuntimeMetrics }) {
         <StatCard label="Decisions audited" value={String(report.n_decisions)} detail={Object.entries(report.decision_distribution).map(([k, v]) => `${k}: ${v}`).join(' · ')} icon={FileCheck2} tone="blue" />
         <StatCard label="Suspend rate" value={formatPct(report.suspend_rate)} detail="Share routed to human review" icon={ShieldCheck} tone="amber" />
         <StatCard label="Auto-decision rate" value={formatPct(report.auto_decision_rate)} detail="Share resolved without review" icon={Sparkles} tone="green" />
-        <StatCard label="Mean confidence" value={formatPct(report.mean_confidence)} detail={`${formatPct(report.below_threshold_rate)} below the 0.85 threshold`} icon={Activity} tone="blue" />
+        <StatCard label="Mean confidence" value={formatPct(report.mean_confidence)} detail={`${formatPct(report.below_threshold_rate)} below the ${formatPct(report.confidence_threshold ?? 0.80)} threshold`} icon={Activity} tone="blue" />
       </div>
       {Object.keys(report.gate_trigger_counts).length > 0 && (
         <div className="panel metrics-subpanel">

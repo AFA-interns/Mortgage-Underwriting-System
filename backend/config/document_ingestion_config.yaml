@@ -1,6 +1,11 @@
 # Document Ingestion Agent configuration — editable without touching code.
 
+confidence:
+  # Calibrated gate threshold for straight-through processing / human review routing
+  minimum_confidence: 0.80
+
 salary_slip:
   # A payslip older than this many months (counted from today) is flagged
   # for human review rather than silently accepted.
   recency_window_months: 3
+

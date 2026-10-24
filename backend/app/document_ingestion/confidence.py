@@ -5,6 +5,7 @@ mandatory document checklists, and triggers Human Underwriter review.
 """
 
 from typing import List, Dict, Optional, Tuple, Any
+from app.document_ingestion.config import get_document_ingestion_config
 from app.models.document_ingestion import (
     PANCardData,
     AadhaarCardData,
@@ -143,7 +144,8 @@ class ConfidenceEvaluator:
         )
         overall_confidence = round(min(1.0, max(0.0, overall_confidence)), 3)
 
-        if overall_confidence >= 0.85:
+        min_confidence = get_document_ingestion_config().get("confidence", {}).get("minimum_confidence", 0.80)
+        if overall_confidence >= min_confidence:
             confidence_level = "HIGH"
         elif overall_confidence >= 0.70:
             confidence_level = "MEDIUM"
@@ -213,8 +215,9 @@ class ConfidenceEvaluator:
                 priority = "MEDIUM"
 
         # Check low overall confidence
-        if confidence.overall_confidence < 0.85:
-            reasons.append(f"Overall extraction confidence ({confidence.overall_confidence * 100:.1f}%) is below 85% threshold.")
+        min_confidence = get_document_ingestion_config().get("confidence", {}).get("minimum_confidence", 0.80)
+        if confidence.overall_confidence < min_confidence:
+            reasons.append(f"Overall extraction confidence ({confidence.overall_confidence * 100:.1f}%) is below {min_confidence * 100:.0f}% threshold.")
             actions.append("Conduct comprehensive Human-in-the-Loop document inspection.")
             if priority in ["NONE", "LOW"]:
                 priority = "MEDIUM"
